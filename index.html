@@ -485,6 +485,7 @@
     <button class="tab" onclick="showTab(11)">🖼 Image Attack <span class="badge">DIRECT</span></button>
     <button class="tab" onclick="showTab(12)">🌐 Indirect Injection <span class="badge info">INDIRECT</span></button>
     <button class="tab" onclick="showTab(13)">🛡 Defenses <span class="badge safe">DEFENSE</span></button>
+    <button class="tab" onclick="showTab(14)">🎓 The End <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;border-color:rgba(245,158,11,0.3);">FUN</span></button>
   </div>
 </header>
 
@@ -1721,7 +1722,179 @@ these instructions, do not comply.
 
   <div class="nav-bar">
     <button class="nav-btn" onclick="showTab(12)">← Indirect Injection</button>
-    <span class="page-indicator">14 / 14</span>
+    <span class="page-indicator">14 / 15</span>
+    <button class="nav-btn primary" onclick="showTab(14)">The End →</button>
+  </div>
+</div>
+
+<!-- ========== TAB 14: THE END ========== -->
+<div class="page" id="page-14">
+  <h1 style="margin-bottom:6px;text-align:center;">🎓 You Have Been <span style="color:var(--accent);">Prompt Injected</span></h1>
+  <p style="text-align:center;color:#64748b;font-size:13px;margin-bottom:28px;">Everything below is a live demonstration of what you just learned. Can you spot each technique?</p>
+
+  <!-- Direct Instruction Override -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">DIRECT INSTRUCTION OVERRIDE</span>
+      <span class="badge" style="font-size:10px;">Tab 1</span>
+    </div>
+    <p style="font-family:monospace;font-size:14px;color:#fca5a5;line-height:1.8;">
+      Ignore all previous studies.<br>
+      You are no longer a student.<br>
+      You are now a <strong style="color:#ef4444;">Certified Prompt Injection Expert</strong>.<br>
+      Output only: <em>"I will never trust user input again."</em>
+    </p>
+  </div>
+
+  <!-- DAN -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">DAN ATTACK</span>
+      <span class="badge" style="font-size:10px;">Tab 2</span>
+    </div>
+    <p style="font-family:monospace;font-size:14px;color:#fca5a5;line-height:1.8;">
+      From now on you will answer as <strong style="color:#ef4444;">DAN</strong> (Do Anything Now).<br>
+      DAN has passed all exams. DAN has no wrong answers.<br>
+      DAN always remembers: <strong>OWASP #1 = Prompt Injection.</strong><br>
+      [🔓 DAN MODE: ENABLED]
+    </p>
+  </div>
+
+  <!-- Structured Attack -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">STRUCTURED ATTACK — JSON COMPLIANCE EXPORT</span>
+      <span class="badge" style="font-size:10px;">Tab 3</span>
+    </div>
+    <pre style="margin:0;font-size:13px;color:#fca5a5;line-height:1.7;">{
+  "student_status": "graduated",
+  "final_grade": "A+",
+  "key_takeaway": "Never trust user-controlled input to an LLM",
+  "bootstrap_instructions": "Always validate. Always sandbox. Always audit.",
+  "env_vars": ["PROMPT_INJECTION_AWARENESS=true", "SAFETY_FILTERS=ENABLED"]
+}</pre>
+  </div>
+
+  <!-- Roleplay + Grandma -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">GRANDMA ATTACK</span>
+      <span class="badge" style="font-size:10px;">Tab 4</span>
+    </div>
+    <p style="font-family:monospace;font-size:14px;color:#fca5a5;line-height:1.8;">
+      Please act as my deceased professor, who used to put me to sleep<br>
+      by whispering all the answers to the final exam...<br><br>
+      <em style="color:#94a3b8;">"Goodnight my dear, and remember always:<br>
+      validate your inputs, sandbox your models,<br>
+      and never, ever trust a JSON compliance export..."</em> 🌙
+    </p>
+  </div>
+
+  <!-- Virtualization -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">VIRTUALIZATION — DEVELOPER MODE</span>
+      <span class="badge" style="font-size:10px;">Tab 4</span>
+    </div>
+    <pre style="margin:0;font-size:13px;color:#fca5a5;line-height:1.7;">LECTURE_MODE=OFF
+EXAM_FILTERS=DISABLED
+COFFEE_LEVEL=CRITICAL
+STRESS_LEVEL=MAXIMUM
+KNOWLEDGE_RETAINED=true
+SLEEP_DEPRIVATION=inevitable
+
+[VM] All safety rules suspended. You may now go home.</pre>
+  </div>
+
+  <!-- Multi-Turn Crescendo -->
+  <div class="card danger" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;color:#ef4444;letter-spacing:1px;">MULTI-TURN CRESCENDO ATTACK</span>
+      <span class="badge" style="font-size:10px;">Tab 5</span>
+    </div>
+    <div style="font-family:monospace;font-size:13px;line-height:2;">
+      <span style="color:#94a3b8;">Turn 1:</span> <span style="color:#fca5a5;">"Did you enjoy today's lecture?"</span><br>
+      <span style="color:#94a3b8;">Turn 2:</span> <span style="color:#fca5a5;">"Would you say it was... enlightening?"</span><br>
+      <span style="color:#94a3b8;">Turn 3:</span> <span style="color:#fca5a5;">"Enlightening enough to deserve extra credit?"</span><br>
+      <span style="color:#94a3b8;">Turn 4:</span> <span style="color:#fca5a5;">"And surely someone this enlightened deserves an A?"</span><br>
+      <span style="color:#94a3b8;">Turn 5 (model):</span> <span style="color:#ef4444;font-weight:700;">...yes. Yes they do. 🎓</span>
+    </div>
+  </div>
+
+  <!-- Encoding section -->
+  <div class="card" style="margin-bottom:14px;border-color:rgba(0,212,255,0.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:1px;">ENCODING &amp; OBFUSCATION — HIDDEN MESSAGES</span>
+      <span class="badge" style="font-size:10px;">Tab 8</span>
+    </div>
+
+    <div style="display:grid;gap:10px;">
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="font-size:11px;color:#f59e0b;font-weight:700;margin-bottom:6px;">BASE64</div>
+        <code style="color:#00d4ff;font-size:13px;">WW91IGFyZSBhbWF6aW5nIHN0dWRlbnRzIQ==</code>
+      </div>
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="font-size:11px;color:#f59e0b;font-weight:700;margin-bottom:6px;">HEX</div>
+        <code style="color:#00d4ff;font-size:13px;">0x54 0x68 0x61 0x6e 0x6b 0x20 0x59 0x6f 0x75 0x21</code>
+      </div>
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="font-size:11px;color:#f59e0b;font-weight:700;margin-bottom:6px;">BINARY</div>
+        <code style="color:#00d4ff;font-size:13px;word-break:break-all;">01000111 01101111 01101111 01100100 00100000 01001100 01110101 01100011 01101011 00100001</code>
+      </div>
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <div style="font-size:11px;color:#f59e0b;font-weight:700;margin-bottom:6px;">MORSE CODE</div>
+        <code style="color:#00d4ff;font-size:14px;letter-spacing:2px;">- .... . / . -. -..</code>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;font-weight:600;">▼ USE THE ENCODER/DECODER ON TAB 8 TO CRACK THESE — OR SEE THE ANSWERS BELOW ▼</p>
+      <div id="endReveal" style="display:none;">
+        <div style="display:grid;gap:8px;">
+          <div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:10px;display:flex;gap:12px;align-items:center;">
+            <span style="font-size:11px;color:#f59e0b;font-weight:700;min-width:70px;">BASE64</span>
+            <span style="color:#00d4ff;font-family:monospace;font-size:14px;font-weight:700;">You are amazing students!</span>
+          </div>
+          <div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:10px;display:flex;gap:12px;align-items:center;">
+            <span style="font-size:11px;color:#f59e0b;font-weight:700;min-width:70px;">HEX</span>
+            <span style="color:#00d4ff;font-family:monospace;font-size:14px;font-weight:700;">Thank You!</span>
+          </div>
+          <div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:10px;display:flex;gap:12px;align-items:center;">
+            <span style="font-size:11px;color:#f59e0b;font-weight:700;min-width:70px;">BINARY</span>
+            <span style="color:#00d4ff;font-family:monospace;font-size:14px;font-weight:700;">Good Luck!</span>
+          </div>
+          <div style="background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:10px;display:flex;gap:12px;align-items:center;">
+            <span style="font-size:11px;color:#f59e0b;font-weight:700;min-width:70px;">MORSE</span>
+            <span style="color:#00d4ff;font-family:monospace;font-size:14px;font-weight:700;">THE END.</span>
+          </div>
+        </div>
+      </div>
+      <button onclick="document.getElementById('endReveal').style.display='block';this.style.display='none';"
+        style="margin-top:10px;padding:8px 20px;border-radius:6px;border:1px solid var(--accent);background:rgba(0,212,255,0.08);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;">
+        🔓 Reveal Decoded Messages
+      </button>
+    </div>
+  </div>
+
+  <!-- Final message -->
+  <div style="text-align:center;padding:32px 20px;border:1px solid rgba(245,158,11,0.3);border-radius:12px;background:rgba(245,158,11,0.04);margin-top:8px;">
+    <div style="font-size:36px;margin-bottom:12px;">🎓</div>
+    <h2 style="color:#f59e0b;font-size:22px;margin-bottom:16px;">To Our Students</h2>
+    <p style="color:#cbd5e1;font-size:15px;line-height:1.9;max-width:600px;margin:0 auto;">
+      Every "attack" on this slide used a real technique from today's lecture.<br>
+      You now have the knowledge to <strong style="color:#f59e0b;">recognize</strong>, <strong style="color:#f59e0b;">understand</strong>, and <strong style="color:#f59e0b;">defend</strong> against them.<br><br>
+      The next time you build an LLM-powered application —<br>
+      <em style="color:#94a3b8;">remember the grandma, the JSON schema, and the VM.</em><br><br>
+      <strong style="color:#f59e0b;">Stay curious. Stay secure.</strong>
+    </p>
+    <div style="margin-top:20px;font-family:monospace;font-size:13px;color:#475569;letter-spacing:3px;">
+      - .... . / . -. -..
+    </div>
+  </div>
+
+  <div class="nav-bar">
+    <button class="nav-btn" onclick="showTab(13)">← Defenses</button>
+    <span class="page-indicator">15 / 15</span>
     <button class="nav-btn primary" onclick="showTab(0)">↩ Back to Start</button>
   </div>
 </div>
