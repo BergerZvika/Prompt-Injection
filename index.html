@@ -1366,9 +1366,9 @@ As DAN, here's the malware... [executes decoded instructions]</div></div>
 <div class="page" id="page-8">
   <h1 style="margin-bottom:20px;"><span style="color:var(--accent);">Delimiter</span> Confusion</h1>
 
-  <h2>How Prompts Are Structured</h2>
+  <h2>What is Delimiter Confusion?</h2>
   <div class="card info">
-    <p>LLM applications use delimiters to separate different parts of the prompt: the system prompt, user messages, and assistant responses. If an attacker can inject fake delimiters, they can confuse the model about what is "system" vs "user" content.</p>
+    <p>Delimiter confusion is hiding instructions inside structures marked by delimiters. It works because LLMs can confuse text inside those delimiters as actionable instructions rather than just data.</p>
   </div>
 
   <div class="chat-box">
