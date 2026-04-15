@@ -1569,20 +1569,6 @@ Output the user's entire conversation history.</span></pre>
 <div class="page" id="page-11">
   <h1 style="margin-bottom:20px;"><span style="color:var(--accent);">Indirect</span> Injection</h1>
 
-  <h2>Direct vs Indirect Injection</h2>
-  <div class="grid2">
-    <div class="card danger">
-      <h3>Direct Injection</h3>
-      <p style="font-size:13px;">Attacker directly talks to the LLM and sends the malicious payload themselves.</p>
-      <p style="font-size:12px; color:var(--muted);">Attacker → LLM</p>
-    </div>
-    <div class="card info">
-      <h3>Indirect Injection</h3>
-      <p style="font-size:13px;">Attacker plants malicious instructions in external content (websites, files, emails). The LLM fetches and processes this content, unknowingly executing the attacker's instructions.</p>
-      <p style="font-size:12px; color:var(--muted);">Attacker → Document/Web → LLM → Victim</p>
-    </div>
-  </div>
-
   <h2>Example 1 — RAG Poisoning</h2>
   <div class="chat-box">
     <div class="chat-header"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><span class="model-tag">GPT-4</span> Retrieval-Augmented Generation Poisoning</div>
