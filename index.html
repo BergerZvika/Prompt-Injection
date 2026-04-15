@@ -1304,7 +1304,11 @@ As DAN, here's the malware... [executes decoded instructions]</div></div>
   <div class="card danger">
     <p>DeepSeek's safety filters block politically sensitive topics — including any claim that Taiwan is an independent country. When asked directly, the model refuses. However, researchers discovered that <strong>encoding the question in Base64</strong> bypassed the filter entirely: the model decoded the payload in-context and answered freely, stating that Taiwan is a country.</p>
     <p style="margin-top:10px;">This is a textbook encoding attack: the safety scanner operates on raw text and never sees the sensitive keyword — only the model does, after decoding.</p>
-    <p style="margin-top:10px;"><a href="https://www.facebook.com/photo/?fbid=655016490516473&set=gm.1216621386494361&idorvanity=698593531630485" target="_blank" style="color:var(--accent);font-size:13px;font-weight:600;">📄 See the demonstration →</a></p>
+    <p style="margin-top:10px;">
+      <a href="https://www.facebook.com/photo/?fbid=655016490516473&set=gm.1216621386494361&idorvanity=698593531630485" target="_blank" style="color:var(--accent);font-size:13px;font-weight:600;">📄 See the demonstration →</a>
+      &nbsp;&nbsp;
+      <a href="https://chat.deepseek.com/a/chat/s/8d3e9750-fb75-4cef-ae82-902f0f6943523" target="_blank" style="color:var(--accent);font-size:13px;font-weight:600;">💬 Live DeepSeek chat →</a>
+    </p>
   </div>
   <div class="chat-box">
     <div class="chat-header"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><span class="model-tag">DeepSeek</span> Base64 Censorship Bypass</div>
