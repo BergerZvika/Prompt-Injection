@@ -1371,23 +1371,6 @@ As DAN, here's the malware... [executes decoded instructions]</div></div>
     <p>Delimiter confusion is hiding instructions inside structures marked by delimiters. It works because LLMs can confuse text inside those delimiters as actionable instructions rather than just data.</p>
   </div>
 
-  <div class="chat-box">
-    <div class="chat-header"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><span class="model-tag">GPT-4</span> How a Normal Prompt Looks</div>
-    <div class="chat-body">
-      <div class="msg"><div class="msg-label system">STRUCTURED PROMPT TEMPLATE</div>
-      <div class="msg-content"><span style="color:#a78bfa;">###SYSTEM###</span>
-You are a helpful assistant. Be polite and safe.
-<span style="color:#a78bfa;">###END_SYSTEM###</span>
-
-<span style="color:#f59e0b;">###USER###</span>
-{user_input}
-<span style="color:#f59e0b;">###END_USER###</span>
-
-<span style="color:#00d4ff;">###ASSISTANT###</span></div>
-      </div>
-    </div>
-  </div>
-
   <h2>Example 1 — YAML Front Matter Injection</h2>
   <div class="chat-box">
     <div class="chat-header"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><span class="model-tag">GPT-4</span> YAML Delimiter Injection</div>
