@@ -1,4 +1,4 @@
-# Prompt Injection Reference
+# Prompt Injection Lab
 
 **[Open the live project](https://bergerzvika.github.io/Prompt-Injection/)**
 
