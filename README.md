@@ -1,6 +1,6 @@
 # Secure Programming (Syber) — Lab
 
-**[Open the live project](https://bergerzvika.github.io/Syber-Lab/)**
+**[Open the live project](https://bergerzvika.github.io/Cyber-Lab/)**
 
 An interactive collection of single-page security labs. Each lab is a self-contained HTML file — no build step, no server, no dependencies beyond Google Fonts.
 
@@ -132,7 +132,7 @@ Multimodal LLMs (GPT-4V, Claude, Gemini) can read text in images. Attackers hide
 
 ## Usage
 
-Open `index.html` in any modern browser, or visit the [live demo](https://bergerzvika.github.io/Syber-Lab/).
+Open `index.html` in any modern browser, or visit the [live demo](https://bergerzvika.github.io/Cyber-Lab/).
 
 ## Purpose
 
