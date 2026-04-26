@@ -1,0 +1,4015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Integer Overflow — Field Studies in Fixed-Width Arithmetic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..900,0..100;1,9..144,300..900,0..100&family=JetBrains+Mono:ital,wght@0,300..700;1,300..700&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --paper:        #EDE3CC;
+  --paper-light:  #F5ECD7;
+  --paper-deep:   #DDD0B0;
+  --ink:          #15110A;
+  --ink-soft:     #5A4F40;
+  --ink-faint:    #8A7E6A;
+  --amber:        #C2410C;
+  --amber-glow:   #EA8C2C;
+  --danger:       #8E1B0E;
+  --cobalt:       #1E3A8A;
+  --moss:         #3F5B2C;
+  --machine:      #0B0907;
+  --machine-2:    #1A1410;
+  --rule:         rgba(21, 17, 10, 0.22);
+  --rule-strong:  rgba(21, 17, 10, 0.55);
+  --shadow:       0 1px 0 rgba(21,17,10,0.08), 0 24px 60px -30px rgba(21,17,10,0.35);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Newsreader', Georgia, serif;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.55;
+  font-size: 17px;
+  font-feature-settings: 'liga', 'kern', 'onum';
+  overflow-x: hidden;
+}
+
+/* paper grain overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.06  0 0 0 0 0.04  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");
+  opacity: 0.28;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: multiply;
+}
+/* subtle vignette */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(21,17,10,0.18) 100%);
+  pointer-events: none; z-index: 1;
+}
+
+::selection { background: var(--amber); color: var(--paper-light); }
+
+/* ------- TYPOGRAPHY ------- */
+.f-display {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 30, "opsz" 144, "wght" 380;
+  letter-spacing: -0.02em;
+  line-height: 0.92;
+}
+.f-display-italic {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "opsz" 144, "wght" 320;
+  letter-spacing: -0.025em;
+}
+.f-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'zero', 'ss01';
+}
+.f-label {
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.f-numeric {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "opsz" 144, "wght" 460;
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.02em;
+}
+
+/* ------- BACK TO HUB BUTTON ------- */
+.back-hub {
+  position: fixed;
+  top: 20px;
+  left: 24px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: var(--paper-light);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 6px 18px -6px rgba(21,17,10,0.35);
+}
+.back-hub:hover {
+  background: var(--ink);
+  color: var(--paper-light);
+  transform: translateX(-2px);
+  box-shadow: 0 8px 22px -6px rgba(21,17,10,0.45);
+}
+.back-hub .arrow {
+  font-family: 'Fraunces', serif;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+.back-hub:hover .arrow { transform: translateX(-3px); }
+
+/* ------- SHELL ------- */
+.shell {
+  position: relative;
+  z-index: 2;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 56px;
+}
+
+/* page numbers in margin */
+.shell::before, .shell::after {
+  content: ''; position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--rule);
+}
+.shell::before { left: 56px; }
+.shell::after  { right: 56px; }
+
+/* ------- COVER ------- */
+.cover {
+  padding: 96px 0 72px;
+  position: relative;
+  border-bottom: 2px solid var(--ink);
+}
+.kicker {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 28px;
+}
+.kicker .num {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 300;
+  font-size: 28px;
+  color: var(--amber);
+}
+.kicker .rule {
+  flex: 1; height: 1px; background: var(--ink); max-width: 80px;
+}
+.kicker .label { color: var(--ink-soft); }
+
+.cover h1 {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 70, "opsz" 144, "wght" 320;
+  font-size: clamp(64px, 9.2vw, 156px);
+  line-height: 0.86;
+  letter-spacing: -0.04em;
+  margin-bottom: 32px;
+}
+.cover h1 em {
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "opsz" 144, "wght" 280;
+  color: var(--amber);
+  display: block;
+}
+.cover .lede {
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  line-height: 1.4;
+  max-width: 640px;
+  color: var(--ink);
+  font-weight: 350;
+}
+.cover .lede em { font-style: italic; color: var(--amber); }
+
+/* ------- INDEX ------- */
+.index {
+  padding: 56px 0 48px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.index h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 28px;
+}
+.index ol {
+  list-style: none; padding: 0; margin: 0;
+  border-top: 1px dashed var(--rule);
+}
+.index ol li {
+  border-bottom: 1px dashed var(--rule);
+}
+.index ol li a {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 18px 6px;
+  color: inherit;
+  text-decoration: none;
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 50, "opsz" 96, "wght" 400;
+  font-size: 24px;
+  letter-spacing: -0.015em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: padding-left 0.25s ease, color 0.25s ease;
+}
+.index ol li a:hover {
+  padding-left: 18px;
+  color: var(--amber);
+}
+.index ol li .rn {
+  flex: 0 0 38px;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 300;
+  font-size: 22px;
+  color: var(--amber);
+}
+.index ol li .ti {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.index ol li .ti em {
+  font-style: italic;
+  color: var(--amber);
+}
+.index ol li a:hover .ti em { color: inherit; }
+.index ol li .leader {
+  flex: 1 1 auto;
+  border-bottom: 1px dotted var(--rule-strong);
+  height: 0;
+  align-self: flex-end;
+  margin: 0 8px 9px;
+  min-width: 32px;
+  transition: border-color 0.25s ease;
+}
+.index ol li a:hover .leader { border-bottom-color: var(--amber); }
+.index ol li .pg {
+  flex: 0 0 auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+.index ol li a:hover .pg { color: var(--amber); }
+@media (max-width: 720px) {
+  .index ol li a { font-size: 19px; gap: 10px; padding: 14px 4px; }
+  .index ol li .rn { flex: 0 0 28px; font-size: 18px; }
+  .index ol li .leader { min-width: 16px; margin: 0 4px 7px; }
+  .index ol li .pg { font-size: 10px; letter-spacing: 0.16em; }
+}
+
+/* ------- SECTIONS ------- */
+section.specimen {
+  padding: 80px 0;
+  border-bottom: 1px solid var(--rule-strong);
+  position: relative;
+}
+section.specimen .head {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 48px;
+  margin-bottom: 56px;
+}
+section.specimen .roman {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 50, "opsz" 144, "wght" 280;
+  font-style: italic;
+  font-size: 96px;
+  line-height: 0.85;
+  color: var(--amber);
+  letter-spacing: -0.04em;
+}
+section.specimen .roman .small {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.22em;
+  font-style: normal;
+  color: var(--ink-soft);
+  margin-top: 14px;
+}
+section.specimen h2 {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 60, "opsz" 144, "wght" 360;
+  font-size: clamp(40px, 5.2vw, 78px);
+  line-height: 0.94;
+  letter-spacing: -0.025em;
+  margin-bottom: 22px;
+}
+section.specimen h2 em {
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "opsz" 144, "wght" 280;
+  color: var(--amber);
+}
+section.specimen .deck {
+  font-family: 'Newsreader', serif;
+  font-size: 20px;
+  line-height: 1.4;
+  max-width: 720px;
+  font-weight: 320;
+}
+section.specimen .body {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 48px;
+  margin-bottom: 32px;
+}
+section.specimen .annotation {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+section.specimen .annotation::before {
+  content: ''; display: block; width: 36px; height: 1px; background: var(--amber);
+  margin-bottom: 12px;
+}
+section.specimen p {
+  font-size: 18px;
+  line-height: 1.55;
+  max-width: 720px;
+  margin-bottom: 16px;
+}
+section.specimen p strong {
+  font-weight: 500;
+  background: linear-gradient(180deg, transparent 60%, rgba(194,65,12,0.25) 60%);
+  padding: 0 2px;
+}
+section.specimen p code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--paper-deep);
+  padding: 1px 6px;
+  font-size: 0.92em;
+  border-radius: 2px;
+}
+
+/* ------- LAB INSTRUMENT (generic) ------- */
+.instrument {
+  margin-top: 32px;
+  border: 1px solid var(--ink);
+  background: var(--paper-light);
+  position: relative;
+  box-shadow: var(--shadow);
+}
+.instrument > .corner {
+  position: absolute; width: 14px; height: 14px;
+  border: 1px solid var(--ink); background: var(--paper);
+}
+.instrument > .corner.tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.instrument > .corner.tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+.instrument > .corner.bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+.instrument > .corner.br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+.instrument .panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--ink);
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, rgba(21,17,10,0.04) 6px 7px),
+    var(--paper-deep);
+}
+.instrument .panel .badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.instrument .panel .title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 360;
+  font-size: 18px;
+}
+.instrument .panel .led {
+  display: flex; gap: 6px; align-items: center;
+}
+.instrument .panel .led i {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1px solid var(--ink-soft);
+  background: var(--paper);
+  display: inline-block;
+}
+.instrument .panel .led i.on {
+  background: var(--amber); border-color: var(--amber);
+  box-shadow: 0 0 8px rgba(234,140,44,0.7);
+}
+.instrument .panel .led i.alarm.on {
+  background: var(--danger); border-color: var(--danger);
+  box-shadow: 0 0 8px rgba(142,27,14,0.7);
+  animation: blink 0.6s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0.25; } }
+.instrument .stage { padding: 28px; }
+
+/* form controls within instruments */
+.controls {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+input[type="number"], input[type="text"] {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 10px 14px;
+  color: var(--ink);
+  width: 220px;
+  outline: none;
+  transition: box-shadow 0.18s, border-color 0.18s;
+}
+input[type="number"]:focus, input[type="text"]:focus {
+  border-color: var(--amber);
+  box-shadow: inset 0 -2px 0 var(--amber);
+}
+button.btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 11px 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+button.btn:hover { background: var(--ink); color: var(--paper-light); }
+button.btn.primary { background: var(--ink); color: var(--paper-light); }
+button.btn.primary:hover { background: var(--amber); border-color: var(--amber); }
+button.btn.danger:hover { background: var(--danger); color: var(--paper-light); border-color: var(--danger); }
+
+/* segmented selector */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.seg button {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; letter-spacing: 0.12em;
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  border-right: 1px solid var(--ink);
+  transition: background 0.15s, color 0.15s;
+}
+.seg button:last-child { border-right: none; }
+.seg button.active {
+  background: var(--ink); color: var(--paper-light);
+}
+.seg button:not(.active):hover { background: var(--paper-deep); }
+
+/* ------- BIT GRID ------- */
+.bitgrid-wrap {
+  display: grid;
+  gap: 32px;
+  margin-top: 28px;
+}
+.bitgroup {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bitgroup .row {
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.bit {
+  perspective: 600px;
+  width: 38px; height: 48px;
+  position: relative;
+}
+.bit .cube {
+  position: relative;
+  width: 100%; height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.68, -0.3, 0.32, 1.4);
+}
+.bit.on .cube { transform: rotateX(180deg); }
+.bit .face {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px; font-weight: 500;
+  border: 1px solid var(--ink);
+  backface-visibility: hidden;
+}
+.bit .face.front {
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+}
+.bit .face.back {
+  background: var(--ink);
+  color: var(--amber-glow);
+  transform: rotateX(180deg);
+  box-shadow: inset 0 0 12px rgba(234,140,44,0.4);
+}
+/* bit byte separator */
+.bit.sep { margin-right: 14px; position: relative; }
+.bit.sep::after {
+  content: ''; position: absolute; right: -10px; top: 25%; bottom: 25%;
+  border-right: 1px dashed var(--rule-strong);
+}
+/* bit position label */
+.bit-labels {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--ink-faint);
+  letter-spacing: 0.12em;
+}
+.bit-labels span {
+  width: 38px; text-align: center;
+}
+.bit-labels span.sep { margin-right: 14px; }
+
+/* ------- READOUT ------- */
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0;
+  margin-top: 28px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.readout .cell {
+  padding: 18px 20px;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.readout .cell:last-child { border-right: none; }
+.readout .cell .lab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft); margin-bottom: 8px;
+}
+.readout .cell .val {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "opsz" 144, "wght" 460;
+  font-feature-settings: 'tnum';
+  font-size: 30px;
+  line-height: 1.05;
+  word-break: break-all;
+}
+.readout .cell .val.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+}
+.readout .cell.danger .val { color: var(--danger); }
+.readout .cell.amber .val { color: var(--amber); }
+.readout .cell .sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+/* ------- WIDTH PANEL ------- */
+.width-rangetable {
+  margin-top: 28px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.width-rangetable table {
+  width: 100%; border-collapse: collapse;
+}
+.width-rangetable th, .width-rangetable td {
+  padding: 14px 20px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+.width-rangetable th {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+}
+.width-rangetable td {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "opsz" 144, "wght" 420;
+  font-feature-settings: 'tnum';
+  font-size: 18px;
+}
+.width-rangetable td.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+}
+.width-rangetable tr.active {
+  background: linear-gradient(90deg, rgba(194,65,12,0.08), transparent);
+}
+.width-rangetable tr.active td:first-child::before {
+  content: '▸ ';
+  color: var(--amber);
+}
+
+/* ------- TONGUES ------- */
+.tongues-grid {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--ink);
+}
+.tongue-card {
+  padding: 26px;
+  background: var(--paper);
+  position: relative;
+}
+.tongue-card.signed { border-right: 1px solid var(--ink); }
+.tongue-card .head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 18px;
+}
+.tongue-card .head .lab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.tongue-card .head .as {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 360;
+  font-size: 20px;
+  color: var(--amber);
+}
+.tongue-card .num {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "opsz" 144, "wght" 460;
+  font-feature-settings: 'tnum';
+  font-size: 56px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.tongue-card .num .minus {
+  font-variation-settings: "opsz" 144, "wght" 800;
+  color: var(--ink);
+  margin-right: 4px;
+}
+.tongue-card .desc {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink-soft);
+  margin-top: 12px;
+}
+.tongue-card .signbit {
+  position: absolute;
+  top: 26px; right: 26px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+}
+
+/* ------- THE WRAPAROUND (calculator) ------- */
+.wrap-result {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 0;
+  border: 1px solid var(--ink);
+  background: var(--paper-light);
+}
+.wrap-side {
+  padding: 26px 30px 24px;
+  min-width: 0;
+}
+.wrap-side.wrap-arith {
+  border-right: 1px solid var(--ink);
+}
+.wrap-side h6 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--rule);
+}
+.wrap-line {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0;
+  min-height: 50px;
+}
+.wrap-line .role {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 360;
+  font-size: 28px;
+  color: var(--amber);
+  text-align: center;
+  line-height: 1;
+}
+.wrap-line .dec {
+  font-family: 'Fraunces', serif;
+  font-feature-settings: 'tnum';
+  font-variation-settings: "opsz" 144, "wght" 460;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  word-break: break-all;
+}
+.wrap-line .bits {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow-x: auto;
+  display: block;
+  padding-bottom: 4px;
+  align-self: center;
+  line-height: 1.2;
+}
+.wrap-line .bits::-webkit-scrollbar { height: 4px; }
+.wrap-line .bits::-webkit-scrollbar-track { background: transparent; }
+.wrap-line .bits::-webkit-scrollbar-thumb {
+  background: rgba(21,17,10,0.22);
+  border-radius: 2px;
+}
+
+.wrap-hr {
+  border-top: 2px solid var(--ink);
+  margin: 10px 0 6px 52px;
+}
+.wrap-eq-row .dec {
+  font-variation-settings: "opsz" 144, "wght" 500;
+}
+.wrap-eq-row .bits {
+  font-weight: 600;
+}
+.wrap-eq-row.over .role,
+.wrap-eq-row.over .dec,
+.wrap-eq-row.over .bits {
+  color: var(--danger);
+}
+
+.wrap-overflow-strip {
+  grid-column: 1 / -1;
+  padding: 14px 30px;
+  background: linear-gradient(90deg, rgba(168,32,14,0.10), rgba(168,32,14,0.02));
+  border-top: 1px solid var(--danger);
+  font-family: 'Newsreader', serif;
+  font-size: 15px;
+  font-style: italic;
+  color: var(--danger);
+  line-height: 1.45;
+}
+.wrap-overflow-strip strong {
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 6px;
+}
+.wrap-overflow-strip em {
+  font-style: italic;
+  font-weight: 500;
+  font-feature-settings: 'tnum';
+}
+
+@media (max-width: 760px) {
+  .wrap-result { grid-template-columns: 1fr; }
+  .wrap-side.wrap-arith { border-right: none; border-bottom: 1px solid var(--ink); }
+}
+
+/* ------- OPERATIONS (safe vs unsafe) ------- */
+.ops-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--ink);
+  margin-top: 28px;
+  background: var(--paper);
+}
+.ops-card {
+  padding: 26px 28px 22px;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  position: relative;
+}
+.ops-card:nth-child(2n) { border-right: none; }
+.ops-card:nth-last-child(-n+2) { border-bottom: none; }
+.ops-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+}
+.ops-card.unsafe::before { background: var(--danger); }
+.ops-card.safe::before   { background: #6BAA3A; }
+
+.ops-card header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  align-items: baseline;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--rule);
+}
+.ops-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  grid-column: 1;
+}
+.ops-card.unsafe .ops-badge { color: var(--danger); }
+.ops-card.safe   .ops-badge { color: #4A7826; }
+.ops-card h3 {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 60, "opsz" 144, "wght" 400;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  grid-column: 1;
+}
+.ops-list {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  letter-spacing: 0.10em;
+  color: var(--ink-soft);
+  font-weight: 500;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  text-align: right;
+}
+.ops-desc {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+  line-height: 1.45;
+}
+.ops-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.ops-controls input[type="text"] {
+  width: 90px;
+  font-size: 14px;
+  padding: 6px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--paper-light);
+  border: 1px solid var(--ink);
+  outline: none;
+}
+.ops-controls input[type="text"]:focus {
+  border-color: var(--amber);
+  box-shadow: inset 0 -2px 0 var(--amber);
+}
+.ops-controls .seg button {
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+}
+.ops-lab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.ops-result {
+  background: var(--machine);
+  color: #DFCFAB;
+  padding: 14px 18px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  border-radius: 0;
+}
+.ops-result > div { display: block; }
+.ops-rlab {
+  color: rgba(223,207,171,0.55);
+  font-size: 10px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+.ops-result .val {
+  color: #FFE0A8;
+  font-weight: 600;
+  font-feature-settings: 'tnum';
+}
+.ops-result .bits {
+  color: #87C7FF;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+}
+.ops-result .ops-detail {
+  color: rgba(223,207,171,0.55);
+  font-size: 12px;
+  font-style: italic;
+  font-family: 'Newsreader', serif;
+  font-feature-settings: 'tnum';
+  margin-left: 8px;
+}
+.ops-flag {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(223,207,171,0.15);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.ops-flag.flag-ok    { color: #97D77F; }
+.ops-flag.flag-over  { color: #FF8870; }
+.ops-flag.flag-trunc { color: #F4D17A; }
+.ops-flag em {
+  font-style: italic;
+  color: #FFE0A8;
+  font-family: 'Newsreader', serif;
+}
+
+@media (max-width: 880px) {
+  .ops-grid { grid-template-columns: 1fr; }
+  .ops-card { border-right: none; }
+  .ops-card:nth-last-child(2) { border-bottom: 1px solid var(--ink); }
+}
+
+/* ------- FIELD NOTES (real-world) ------- */
+.fieldnotes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+  border: 1px solid var(--ink);
+  margin-top: 28px;
+}
+.note {
+  padding: 30px;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  position: relative;
+}
+.note:nth-child(2n) { border-right: none; }
+.note:nth-last-child(-n+2) { border-bottom: none; }
+.note .stamp {
+  position: absolute; top: 18px; right: 18px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.18em;
+  padding: 3px 9px;
+  text-transform: uppercase;
+  transform: rotate(2deg);
+  opacity: 0.8;
+}
+.note .yr {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.note h4 {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 70, "opsz" 144, "wght" 400;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.note h4 em { font-style: italic; color: var(--amber); }
+.note .casefile {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-bottom: 14px;
+}
+.note p {
+  font-family: 'Newsreader', serif;
+  font-size: 15.5px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.note .crit {
+  border-top: 1px dashed var(--rule-strong);
+  padding-top: 14px;
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 18px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.note .crit dt { letter-spacing: 0.16em; text-transform: uppercase; }
+.note .crit dd { color: var(--ink); font-feature-settings: 'tnum'; }
+.note a.source {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 2px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.note a.source::after {
+  content: ' ↗';
+  display: inline-block;
+  margin-left: 2px;
+  font-style: normal;
+}
+.note a.source:hover {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+/* ------- LIVE C COMPILER ------- */
+.scenario-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.scenario-tab {
+  padding: 16px 18px;
+  border-right: 1px solid var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  font-family: 'Newsreader', serif;
+  position: relative;
+  transition: background 0.15s, color 0.15s;
+  border-bottom: none;
+  border-top: none;
+  border-left: none;
+  color: var(--ink);
+}
+.scenario-tab:last-child { border-right: none; }
+.scenario-tab:hover { background: var(--paper-deep); }
+.scenario-tab.active {
+  background: var(--ink);
+  color: var(--paper-light);
+}
+.scenario-tab.active .lab { color: var(--amber-glow); }
+.scenario-tab.active .blurb { color: rgba(241,232,212,0.7); }
+.scenario-tab .lab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--amber);
+  display: block;
+  margin-bottom: 6px;
+}
+.scenario-tab .ti {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 50, "opsz" 96, "wght" 420;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  display: block;
+}
+.scenario-tab .ti em { color: var(--amber); font-style: italic; }
+.scenario-tab.active .ti em { color: var(--amber-glow); }
+.scenario-tab .blurb {
+  display: block;
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 13px;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  line-height: 1.3;
+}
+
+.code-runner {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 0;
+  background: var(--machine);
+}
+.code-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.step-tabs {
+  display: flex;
+  gap: 0;
+  background: rgba(0,0,0,0.35);
+  border-bottom: 1px solid rgba(234,140,44,0.18);
+}
+.step-tabs:empty { display: none; }
+.step-tab {
+  flex: 1;
+  padding: 11px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: rgba(223,207,171,0.55);
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(234,140,44,0.18);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.step-tab:last-child { border-right: none; }
+.step-tab:hover { color: #FFE6B8; background: rgba(255,176,96,0.05); }
+.step-tab.active {
+  color: #FFB060;
+  border-bottom-color: var(--amber-glow);
+  background: rgba(255,176,96,0.08);
+}
+.code-block {
+  background: var(--machine);
+  color: #DFCFAB;
+  padding: 24px 26px 24px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  line-height: 1.7;
+  overflow-x: auto;
+  position: relative;
+  margin: 0;
+  white-space: pre;
+  border-right: 1px solid rgba(234,140,44,0.15);
+}
+.code-block .line {
+  display: block;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 0;
+  position: relative;
+  transition: background 0.3s;
+}
+.code-block .line .ln {
+  display: inline-block;
+  width: 26px;
+  color: rgba(223,207,171,0.28);
+  user-select: none;
+  text-align: right;
+  margin-right: 14px;
+  font-size: 11px;
+}
+.code-block .line.hl-overflow {
+  background: rgba(255, 80, 30, 0.18);
+  box-shadow: inset 3px 0 0 #FF6B40;
+}
+.code-block .line.hl-overflow .ln {
+  color: #FF8B5C;
+}
+.code-block .kw  { color: #FFB060; font-weight: 500; }
+.code-block .ty  { color: #87C7FF; }
+.code-block .fn  { color: #F4D17A; }
+.code-block .str { color: #97D77F; }
+.code-block .com { color: rgba(223,207,171,0.45); font-style: italic; }
+.code-block .num { color: #FFA8A8; }
+.code-block .pp  { color: #C792EA; font-style: italic; }
+.code-block input.inline-input {
+  display: inline-block;
+  min-width: 60px;
+  width: 7ch;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  background: rgba(234,140,44,0.12);
+  border: 1px solid rgba(234,140,44,0.55);
+  color: #FFD08A;
+  padding: 0 6px;
+  margin: 0 1px;
+  outline: none;
+  text-align: center;
+  border-radius: 2px;
+  vertical-align: baseline;
+  height: 22px;
+  transition: all 0.15s;
+}
+.code-block input.inline-input:focus {
+  border-color: var(--amber-glow);
+  background: rgba(234,140,44,0.28);
+  box-shadow: 0 0 0 2px rgba(234,140,44,0.32);
+  color: #FFE6B8;
+}
+.code-block input.inline-input.wide { width: 13ch; }
+
+.terminal {
+  background: #0A0807;
+  color: #DFCFAB;
+  display: flex;
+  flex-direction: column;
+}
+.terminal .term-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(223,207,171,0.18);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(223,207,171,0.55);
+}
+.terminal .term-dots {
+  display: flex; gap: 6px;
+}
+.terminal .term-dots span {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid rgba(223,207,171,0.3);
+  display: inline-block;
+}
+.terminal .term-dots span:nth-child(1) { background: #FF6B40; border-color: #FF6B40; }
+.terminal .term-dots span:nth-child(2) { background: #F4D17A; border-color: #F4D17A; }
+.terminal .term-dots span:nth-child(3) { background: #97D77F; border-color: #97D77F; }
+.terminal .term-body {
+  padding: 18px 22px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  flex: 1;
+  min-height: 280px;
+  overflow-y: auto;
+}
+.terminal .term-body .prompt { color: #97D77F; display: block; }
+.terminal .term-body .out    { color: #E8DDC4; display: block; }
+.terminal .term-body .err    { color: #FF8A6B; display: block; font-weight: 500; }
+.terminal .term-body .meta   { color: rgba(223,207,171,0.45); font-style: italic; display: block; margin-top: 10px; font-size: 12px; }
+.terminal .term-body::-webkit-scrollbar { width: 6px; }
+.terminal .term-body::-webkit-scrollbar-track { background: transparent; }
+.terminal .term-body::-webkit-scrollbar-thumb { background: rgba(223,207,171,0.25); }
+
+.runner-controls {
+  padding: 16px 22px;
+  border-top: 1px solid var(--ink);
+  background: var(--paper-deep);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.runner-controls .info {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.06em;
+}
+.runner-controls .info b {
+  color: var(--ink); font-weight: 500;
+}
+.runner-controls .actions {
+  display: flex; gap: 10px;
+}
+button.btn-run {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: var(--amber);
+  color: #FFFCF5;
+  border: 1px solid var(--amber);
+  padding: 12px 22px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+button.btn-run:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+button.btn-run::before {
+  content: '▶';
+  margin-right: 8px;
+  display: inline-block;
+  font-size: 10px;
+  vertical-align: middle;
+}
+button.btn-run:disabled {
+  background: var(--paper-deep);
+  border-color: var(--rule-strong);
+  color: var(--ink-faint);
+  cursor: wait;
+}
+
+.verdict-panel {
+  padding: 26px 28px;
+  background: var(--paper-light);
+  border-top: 1px solid var(--ink);
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 32px;
+}
+.verdict-panel h6 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+.verdict-panel .what-happened {
+  font-family: 'Newsreader', serif;
+  font-size: 16.5px;
+  line-height: 1.55;
+}
+.verdict-panel .what-happened strong { color: var(--danger); font-weight: 500; }
+.verdict-panel .what-happened em { color: var(--amber); font-style: italic; }
+.verdict-panel .what-happened code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--paper-deep);
+  padding: 1px 6px;
+  font-size: 0.92em;
+  border-radius: 2px;
+}
+
+@media (max-width: 980px) {
+  .code-runner { grid-template-columns: 1fr; }
+  .code-block { border-right: none; border-bottom: 1px solid rgba(234,140,44,0.15); }
+  .verdict-panel { grid-template-columns: 1fr; gap: 12px; }
+}
+
+/* ------- ANTIVENOMS / REMEDIES ------- */
+.remedies {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border: 1px solid var(--ink);
+  margin-top: 28px;
+  background: var(--paper);
+}
+.remedy {
+  padding: 36px 36px 30px;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  position: relative;
+}
+.remedy:last-child { border-bottom: none; }
+.remedy.remedy-wide {
+  background: var(--paper-light);
+  padding: 40px 42px;
+}
+
+.rem-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--rule-strong);
+}
+.rem-no {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--amber);
+  text-transform: uppercase;
+}
+.rem-tech {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  border: 1px solid var(--moss);
+  color: var(--moss);
+  padding: 3px 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rem-tech.tech-pre  { border-color: var(--moss); color: var(--moss); }
+.rem-tech.tech-post { border-color: var(--cobalt); color: var(--cobalt); }
+.rem-tech.tech-type { border-color: var(--amber); color: var(--amber); }
+.remedy h3 {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: "SOFT" 60, "opsz" 96, "wght" 400;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  line-height: 1.18;
+  margin-bottom: 18px;
+}
+.remedy h3 em {
+  color: var(--amber);
+  font-style: italic;
+}
+
+.rem-codes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin-bottom: 18px;
+  border: 1px solid rgba(234,140,44,0.18);
+  background: var(--machine);
+  position: relative;
+}
+.rem-code {
+  position: relative;
+  background: var(--machine);
+  padding: 28px 20px 18px 28px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #DFCFAB;
+  overflow-x: auto;
+  align-self: stretch;
+  min-width: 0; /* allow grid items to shrink and scroll */
+}
+.rem-code.vuln {
+  box-shadow: inset 4px 0 0 var(--danger);
+  border-right: 1px solid rgba(234,140,44,0.18);
+}
+.rem-code.safe {
+  box-shadow: inset 4px 0 0 #6BAA3A;
+  background: #0A0E08;
+}
+.rem-code .filename {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: rgba(223,207,171,0.55);
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(223,207,171,0.18);
+  text-transform: uppercase;
+}
+.rem-code.vuln .filename b { color: #FF8870; }
+.rem-code.safe .filename b { color: #97D77F; }
+
+/* token-level diff highlights (within a panel) */
+.rem-code .diff-add {
+  background: rgba(151,215,127,0.22);
+  padding: 1px 5px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(151,215,127,0.5);
+}
+.rem-code .diff-del {
+  background: rgba(255,136,112,0.22);
+  padding: 1px 5px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255,136,112,0.5);
+}
+/* line-level diff highlights — inline within <pre> so newlines aren't doubled */
+.rem-code .line-add,
+.rem-code .line-del {
+  background: rgba(151,215,127,0.14);
+  box-shadow: inset 3px 0 0 #97D77F;
+  padding: 0 8px 0 12px;
+  margin-left: -12px;
+  border-radius: 2px;
+}
+.rem-code .line-del {
+  background: rgba(255,136,112,0.14);
+  box-shadow: inset 3px 0 0 #FF8870;
+}
+.rem-code .line-add::before { content: '+ '; color: #97D77F; font-weight: 600; }
+.rem-code .line-del::before { content: '− '; color: #FF8870; font-weight: 600; }
+.rem-code .rem-tag {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+}
+.rem-code.vuln .rem-tag { color: #FF8870; }
+.rem-code.safe .rem-tag { color: #97D77F; }
+.rem-code pre {
+  margin: 0;
+  white-space: pre;
+  background: transparent;
+  padding: 0;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  overflow-x: auto;
+}
+.rem-code .kw  { color: #FFB060; font-weight: 500; }
+.rem-code .ty  { color: #87C7FF; }
+.rem-code .fn  { color: #F4D17A; }
+.rem-code .str { color: #97D77F; }
+.rem-code .com { color: rgba(223,207,171,0.5); font-style: italic; }
+.rem-code .num { color: #FFA8A8; }
+.rem-code .pp  { color: #C792EA; font-style: italic; }
+.rem-code .add { color: #97D77F; }
+.rem-code .del { color: #FF8870; opacity: 0.85; }
+
+.rem-why {
+  font-family: 'Newsreader', serif;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.rem-why em { color: var(--amber); font-style: italic; }
+.rem-why code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--paper-deep);
+  padding: 1px 5px;
+  font-size: 0.92em;
+  border-radius: 2px;
+}
+
+.remedy-wide h3 {
+  font-size: 36px;
+  margin-bottom: 22px;
+}
+.remedy-wide .principles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22px 36px;
+  margin-top: 18px;
+}
+.remedy-wide .principle {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 16px;
+  align-items: baseline;
+}
+.remedy-wide .principle .ix {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "wght" 320;
+  font-size: 22px;
+  color: var(--amber);
+}
+.remedy-wide .principle .text {
+  font-family: 'Newsreader', serif;
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+.remedy-wide .principle .text strong {
+  font-weight: 500;
+  background: linear-gradient(180deg, transparent 60%, rgba(194,65,12,0.22) 60%);
+  padding: 0 2px;
+}
+.remedy-wide .principle .text code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--paper-deep);
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+
+@media (max-width: 980px) {
+  .remedy { padding: 26px 22px; }
+  .remedy.remedy-wide .principles { grid-template-columns: 1fr; }
+  .rem-codes { grid-template-columns: 1fr; }
+  .rem-code.vuln {
+    border-right: none;
+    border-bottom: 1px solid rgba(234,140,44,0.18);
+  }
+}
+
+/* ------- COLOPHON ------- */
+.colophon {
+  padding: 80px 0 60px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 48px;
+  border-top: 2px solid var(--ink);
+}
+.colophon h6 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+.colophon p {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.colophon .signature {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "opsz" 144, "wght" 320;
+  font-size: 28px;
+  color: var(--amber);
+}
+
+/* ------- SCROLL-TRIGGERED REVEALS -------
+   Animation is enhancement-only: content stays visible even if the
+   IntersectionObserver never fires. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 1s cubic-bezier(0.2, 0.8, 0.2, 1),
+                transform 1s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .reveal.in {
+    opacity: 1; transform: translateY(0);
+  }
+  .reveal.delay-1 { transition-delay: 0.08s; }
+  .reveal.delay-2 { transition-delay: 0.16s; }
+  .reveal.delay-3 { transition-delay: 0.24s; }
+}
+/* fallback: when the IO has been observed at least once, force visible.
+   The script also adds `.in` once on observe, so this acts as a safety
+   net for elements that scroll-triggered too late or never. */
+.reveal.in,
+html.no-js .reveal { opacity: 1 !important; transform: none !important; }
+
+/* responsive */
+@media (max-width: 980px) {
+  .shell { padding: 0 28px; }
+  .index { grid-template-columns: 1fr; gap: 18px; }
+  section.specimen .head { grid-template-columns: 1fr; gap: 20px; }
+  section.specimen .body { grid-template-columns: 1fr; gap: 18px; }
+  section.specimen .roman { font-size: 64px; }
+  .tongues-grid { grid-template-columns: 1fr; }
+  .tongue-card.signed { border-right: none; border-bottom: 1px solid var(--ink); }
+  .fieldnotes { grid-template-columns: 1fr; }
+  .note { border-right: none; }
+  .note:nth-child(2n) { border-right: none; }
+  .colophon { grid-template-columns: 1fr; gap: 24px; }
+  .wrap-controls { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .shell { padding: 0 16px; }
+  .shell::before { left: 16px; }
+  .shell::after { right: 16px; }
+  .cover { padding: 48px 0 32px; }
+  section.specimen { padding: 48px 0; }
+  .bit { width: 28px; height: 36px; }
+  .bit .face { font-size: 14px; }
+  .bit-labels span { width: 28px; font-size: 8px; }
+  .viewport .canvas-wrap { height: 380px; }
+  .viewport .hud b { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+
+<a href="index.html" class="back-hub" aria-label="Return to lab hub">
+  <span class="arrow">←</span>
+  <span>labs</span>
+</a>
+
+<div class="shell">
+
+<!-- ============= COVER ============= -->
+<header class="cover">
+  <div>
+    <div class="kicker">
+      <span class="num">§</span>
+      <span class="rule"></span>
+      <span class="label f-label">A laboratory primer</span>
+    </div>
+    <h1 class="f-display">
+      INTEGER
+      <em>overflow</em>
+    </h1>
+    <p class="lede">
+      An interactive walkthrough of <em>integer overflow</em> — what happens when an arithmetic result no longer fits in the bits a program reserved for it. Seven chapters: how integers are stored, how the same bits can mean two different numbers, when addition and subtraction wrap, which operators are safe and which are not, what real software has lost to overflow, what overflow looks like in working C, and how to defend against each kind.
+    </p>
+  </div>
+</header>
+
+<!-- ============= INDEX ============= -->
+<nav class="index">
+  <h3>Table of specimens</h3>
+  <ol>
+    <li><a href="#sec1"><span class="rn">i.</span><span class="ti"><em>Storage</em> — how a number fits in fixed bits</span><span class="leader"></span><span class="pg">p.&nbsp;002</span></a></li>
+    <li><a href="#sec2"><span class="rn">ii.</span><span class="ti"><em>Signed vs Unsigned</em> — same bits, two readings</span><span class="leader"></span><span class="pg">p.&nbsp;006</span></a></li>
+    <li><a href="#sec3"><span class="rn">iii.</span><span class="ti"><em>Wraparound</em> — when addition and subtraction overflow</span><span class="leader"></span><span class="pg">p.&nbsp;008</span></a></li>
+    <li><a href="#sec4"><span class="rn">iv.</span><span class="ti"><em>Operators</em> — which can overflow, which cannot</span><span class="leader"></span><span class="pg">p.&nbsp;010</span></a></li>
+    <li><a href="#sec5"><span class="rn">v.</span><span class="ti">Real-World <em>Bugs</em> — overflow incidents in production</span><span class="leader"></span><span class="pg">p.&nbsp;014</span></a></li>
+    <li><a href="#sec6"><span class="rn">vi.</span><span class="ti">Live <em>C Programs</em> — six overflow bugs you can run</span><span class="leader"></span><span class="pg">p.&nbsp;016</span></a></li>
+    <li><a href="#sec7"><span class="rn">vii.</span><span class="ti">Secure <em>Fixes</em> — patches for each program</span><span class="leader"></span><span class="pg">p.&nbsp;020</span></a></li>
+  </ol>
+</nav>
+
+<!-- ============= SECTION I : THE BIT & THE CAGE ============= -->
+<section class="specimen" id="sec1">
+  <div class="head">
+    <div class="roman reveal">I<span class="small">Specimen one — storage</span></div>
+    <div>
+      <h2 class="reveal">How a number fits in <em>fixed bits</em>.</h2>
+      <p class="deck reveal delay-1">A computer cannot literally "store the number 42." It stores a fixed pattern of <em>on</em> and <em>off</em> switches — bits — and reads that pattern as 42 by convention. N bits accommodate exactly 2<sup>N</sup> patterns: an 8‑bit byte holds 256, no more. <em>Integer overflow is what happens when a value a program tries to store does not fit in the bits reserved for it</em> — and from this single mismatch every behaviour in this lab descends.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      Each bit represents a power of two. To form a value the machine sums the powers whose bits are on. The cage is exactly its size — N bits, never more — and that ceiling is the same on every machine.
+    </p>
+    <div>
+      <p>Take an <strong>8‑bit unsigned byte</strong>. Eight bits; 256 unique patterns, from <code>00000000</code> to <code>11111111</code>. Ask the byte to hold a value larger than 255 and the high bits silently fall off — the byte keeps only the rightmost 8 bits and forgets the rest. <em>That silent loss is integer overflow</em>, and every example in this lab is a different costume on the same idea.</p>
+      <p>Below: the four canonical widths, their <strong>unsigned</strong> spans, and their <strong>signed</strong> spans (using two's complement, the encoding every modern CPU uses, in which the leftmost bit carries a negative weight). Click a row to designate that width as the working width for this section's gauge.</p>
+    </div>
+  </div>
+
+  <div class="instrument reveal delay-3" id="cageinst">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="panel">
+      <span class="badge">INSTRUMENT 01 ⁄ CAGE GAUGE</span>
+      <span class="title">Comparative ranges by width.</span>
+      <span class="led"><i class="on"></i><i></i></span>
+    </div>
+    <div class="stage">
+      <div class="width-rangetable">
+        <table>
+          <thead><tr>
+            <th>Width</th>
+            <th>Patterns (2<sup>N</sup>)</th>
+            <th>Unsigned span</th>
+            <th>Signed span</th>
+            <th>Common name</th>
+          </tr></thead>
+          <tbody id="cage-tbody">
+            <tr data-w="8"><td>8</td><td class="mono">256</td><td class="mono">0 — 255</td><td class="mono">−128 — 127</td><td><em>byte</em></td></tr>
+            <tr data-w="16"><td>16</td><td class="mono">65 536</td><td class="mono">0 — 65 535</td><td class="mono">−32 768 — 32 767</td><td><em>short</em></td></tr>
+            <tr data-w="32" class="active"><td>32</td><td class="mono">≈ 4.29 × 10⁹</td><td class="mono">0 — 4 294 967 295</td><td class="mono">−2 147 483 648 — 2 147 483 647</td><td><em>int</em></td></tr>
+            <tr data-w="64"><td>64</td><td class="mono">≈ 1.84 × 10¹⁹</td><td class="mono">0 — 18 446 744 073 709 551 615</td><td class="mono">±9.22 × 10¹⁸</td><td><em>long</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="readout" style="margin-top:24px">
+        <div class="cell">
+          <div class="lab">selected width</div>
+          <div class="val f-numeric" id="cage-w">32</div>
+          <div class="sub">bits</div>
+        </div>
+        <div class="cell amber">
+          <div class="lab">addresses (unsigned MAX)</div>
+          <div class="val mono" id="cage-umax">4 294 967 295</div>
+        </div>
+        <div class="cell">
+          <div class="lab">signed MIN ⁄ MAX</div>
+          <div class="val mono" id="cage-smm">−2 147 483 648 ⁄ 2 147 483 647</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============= SECTION II : TWO TONGUES ============= -->
+<section class="specimen" id="sec2">
+  <div class="head">
+    <div class="roman reveal">II<span class="small">Specimen two — signed vs unsigned</span></div>
+    <div>
+      <h2 class="reveal">The <em>same bits</em>, read two ways.</h2>
+      <p class="deck reveal delay-1">The same eight bits mean <em>255</em> to one reader and <em>−1</em> to another, depending on whether the leftmost bit is read as a sign. Signed and unsigned overflow look different from each other for exactly this reason — the same bytes, two contracts.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      In two's complement, the leftmost bit carries a negative weight. To negate a number, invert every bit and add one. This single rule produces every quirk of signed arithmetic — and explains why signed overflow lands on a negative number while unsigned overflow lands on a small positive one.
+    </p>
+    <div>
+      <p>The instrument below holds <strong>8, 16, 32, or 64 bits</strong> — your choice. Edit the bits directly (click them), sweep the slider, type a decimal value, or randomise. The <em>same</em> bit pattern produces two distinct decimal readings: one if the leftmost bit is treated as a sign, one if it is not. The reading depends entirely on which type the program declared, never on the bytes themselves.</p>
+    </div>
+  </div>
+
+  <div class="instrument reveal delay-3" id="tonguesinst">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="panel">
+      <span class="badge">INSTRUMENT 03 ⁄ TWIN INTERPRETERS</span>
+      <span class="title" id="tng-title">N bits. Two readings.</span>
+      <span class="led"><i class="on"></i><i></i></span>
+    </div>
+    <div class="stage">
+      <div class="controls">
+        <div class="field">
+          <label>Width</label>
+          <div class="seg" id="tng-width">
+            <button data-w="8" class="active">8</button>
+            <button data-w="16">16</button>
+            <button data-w="32">32</button>
+            <button data-w="64">64</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Decimal value</label>
+          <input type="text" id="tng-text" value="200" />
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn" id="tng-flip">invert all bits</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn" id="tng-clear">clear</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn" id="tng-rand">randomise</button>
+        </div>
+      </div>
+
+      <div class="bitgroup" style="margin-top:24px;">
+        <label class="f-label" style="color:var(--ink-soft);margin-bottom:10px;display:block;">bit pattern · click any bit to flip</label>
+        <div class="bit-labels" id="tng-labels"></div>
+        <div class="row" id="tng-bits"></div>
+      </div>
+
+      <div class="field" style="margin-top:18px;">
+        <label>Or sweep <span id="tng-sweep-note" style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--ink-faint);">(0 → 255)</span></label>
+        <input type="range" id="tng-slider" min="0" max="255" value="200" style="width:100%;accent-color:var(--amber);" />
+      </div>
+
+      <div class="tongues-grid" style="margin-top:24px;">
+        <div class="tongue-card unsigned">
+          <div class="head">
+            <span class="lab">read as unsigned</span>
+            <span class="as" id="tng-as-u">u8</span>
+          </div>
+          <div class="num f-numeric" id="tng-u">200</div>
+          <div class="desc" id="tng-desc-u">All bits contribute positive weight. Leftmost bit is worth 128 (2⁷).</div>
+        </div>
+        <div class="tongue-card signed">
+          <div class="head">
+            <span class="lab">read as signed</span>
+            <span class="as" id="tng-as-s">i8</span>
+          </div>
+          <div class="num f-numeric" id="tng-s">−56</div>
+          <div class="desc" id="tng-desc-s">Leftmost bit reverses sign — its weight becomes −128 (−2⁷).</div>
+          <div class="signbit">SIGN BIT ↗</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============= SECTION III : THE WRAPAROUND ============= -->
+<section class="specimen" id="sec3">
+  <div class="head">
+    <div class="roman reveal">III<span class="small">Specimen three — wraparound</span></div>
+    <div>
+      <h2 class="reveal">When addition and subtraction <em>overflow</em>.</h2>
+      <p class="deck reveal delay-1">Add or subtract two numbers in any of four cages. The arithmetic is computed on the host machine in <em>arbitrary precision</em> first; then the cage truncates the result to its width. When the truncated value disagrees with the true result, that disagreement is overflow.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      Edit either operand; the calculation runs immediately. Switch widths to see how the same arithmetic produces overflow at one width and not at another.
+    </p>
+    <div>
+      <p>The instrument below shows the same operation in two columns. The left column is the <strong>arithmetic</strong> in decimal: A, B, and the result a real CPU would store after truncating to N bits. The right column is the same values shown as <strong>bits</strong>, so the truncation is visible directly. When the arithmetic on the left disagrees with the true mathematical answer, the bits on the right show what was lost — and that disagreement is overflow, observed.</p>
+    </div>
+  </div>
+
+  <div class="instrument reveal delay-3" id="wrapinst">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="panel">
+      <span class="badge">INSTRUMENT 03 ⁄ ADD ⁄ SUB CALCULATOR</span>
+      <span class="title">Two operands. One cage. Two readings.</span>
+      <span class="led"><i class="on"></i><i class="alarm" id="wrap-alarm"></i></span>
+    </div>
+    <div class="stage">
+      <div class="controls">
+        <div class="field">
+          <label>Width</label>
+          <div class="seg" id="wrap-width">
+            <button data-w="8" class="active">8</button>
+            <button data-w="16">16</button>
+            <button data-w="32">32</button>
+            <button data-w="64">64</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Sign</label>
+          <div class="seg" id="wrap-sign">
+            <button data-s="u" class="active">unsigned</button>
+            <button data-s="s">signed</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls" style="margin-top: 16px; align-items: flex-end;">
+        <div class="field"><label>Operand A</label><input type="text" id="wrap-a" value="200" /></div>
+        <div class="field">
+          <label>Operation</label>
+          <div class="seg" id="wrap-op">
+            <button data-op="add" class="active">+</button>
+            <button data-op="sub">−</button>
+          </div>
+        </div>
+        <div class="field"><label>Operand B</label><input type="text" id="wrap-b" value="100" /></div>
+      </div>
+
+      <div class="wrap-result">
+        <div class="wrap-side wrap-arith">
+          <h6>ARITHMETIC</h6>
+          <div class="wrap-line"><span class="role">A</span><span class="dec" id="wrap-a-dec">200</span></div>
+          <div class="wrap-line"><span class="role" id="wrap-op-l">+</span><span class="dec" id="wrap-b-dec">100</span></div>
+          <div class="wrap-hr"></div>
+          <div class="wrap-line wrap-eq-row" id="wrap-eq-arith">
+            <span class="role">=</span><span class="dec" id="wrap-result-dec">44</span>
+          </div>
+        </div>
+        <div class="wrap-side wrap-binary">
+          <h6 id="wrap-bits-header">BITS · u8</h6>
+          <div class="wrap-line"><span class="role">A</span><span class="bits" id="wrap-a-bits">1100 1000</span></div>
+          <div class="wrap-line"><span class="role" id="wrap-op-r">+</span><span class="bits" id="wrap-b-bits">0110 0100</span></div>
+          <div class="wrap-hr"></div>
+          <div class="wrap-line wrap-eq-row" id="wrap-eq-bits">
+            <span class="role">=</span><span class="bits" id="wrap-result-bits">0010 1100</span>
+          </div>
+        </div>
+        <div class="wrap-overflow-strip" id="wrap-overflow-strip" style="display:none;">
+          <strong>overflow</strong> — raw result <em id="wrap-raw-info">300</em> exceeds the cage; the high bit was lost. Cage retains <em id="wrap-cage-info">44</em>.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============= SECTION IV : OPERATIONS ============= -->
+<section class="specimen" id="sec4">
+  <div class="head">
+    <div class="roman reveal">IV<span class="small">Specimen four — operators</span></div>
+    <div>
+      <h2 class="reveal">Which operators can <em>overflow</em>, which cannot.</h2>
+      <p class="deck reveal delay-1">Of the integer operations a C program performs, only some can produce overflow or truncation. The rest always fit. Here is the complete catalog — four categories, two unsafe, two safe — with one interactive demo per category.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      Edit any operand, switch any width or sign; the result updates immediately. The <em>red</em>-striped cards are the operations that can silently corrupt a value; the <em>green</em>-striped cards are the ones that always produce a defined result within range.
+    </p>
+    <div>
+      <p>The unsafe pair — <strong>assignment</strong> and <strong>arithmetic</strong> — covers every example you have seen so far in this lab. The safe pair — <strong>bitwise/shift</strong> and <strong>compare</strong> — is what well-written C falls back to when an arithmetic operation cannot be guaranteed to fit. Knowing which is which is the first step in writing code that doesn't lose information by accident.</p>
+    </div>
+  </div>
+
+  <div class="ops-grid reveal delay-3">
+
+    <article class="ops-card unsafe" id="ops1">
+      <header>
+        <span class="ops-badge">UNSAFE · TRUNCATION</span>
+        <h3>Assignment</h3>
+        <span class="ops-list">=</span>
+      </header>
+      <p class="ops-desc">Storing a wide value into a narrower variable silently keeps only the low N bits.</p>
+      <div class="ops-controls">
+        <span class="ops-lab">value</span>
+        <input type="text" id="op1-val" value="1000" />
+        <span class="ops-lab">→ stored as</span>
+        <div class="seg" id="op1-width">
+          <button data-w="8" class="active">8</button>
+          <button data-w="16">16</button>
+          <button data-w="32">32</button>
+        </div>
+        <div class="seg" id="op1-sign">
+          <button data-s="u" class="active">u</button>
+          <button data-s="s">s</button>
+        </div>
+      </div>
+      <div class="ops-result">
+        <div><span class="ops-rlab">stored:</span> <span class="val" id="op1-stored">232</span> &nbsp; <span class="bits" id="op1-bits">1110 1000</span></div>
+        <div class="ops-flag" id="op1-flag"></div>
+      </div>
+    </article>
+
+    <article class="ops-card unsafe" id="ops2">
+      <header>
+        <span class="ops-badge">UNSAFE · OVERFLOW &amp; TRUNCATION</span>
+        <h3>Arithmetic</h3>
+        <span class="ops-list">+ − × ÷</span>
+      </header>
+      <p class="ops-desc">Sums, differences, products, and quotients can exceed the cage and silently wrap.</p>
+      <div class="ops-controls">
+        <input type="text" id="op2-a" value="200" />
+        <div class="seg" id="op2-op">
+          <button data-op="add" class="active">+</button>
+          <button data-op="sub">−</button>
+          <button data-op="mul">×</button>
+          <button data-op="div">÷</button>
+        </div>
+        <input type="text" id="op2-b" value="100" />
+        <div class="seg" id="op2-width">
+          <button data-w="8" class="active">8</button>
+          <button data-w="16">16</button>
+          <button data-w="32">32</button>
+        </div>
+        <div class="seg" id="op2-sign">
+          <button data-s="u" class="active">u</button>
+          <button data-s="s">s</button>
+        </div>
+      </div>
+      <div class="ops-result">
+        <div><span class="ops-rlab">raw:</span> <span class="val" id="op2-raw">300</span></div>
+        <div><span class="ops-rlab">stored:</span> <span class="val" id="op2-stored">44</span> &nbsp; <span class="bits" id="op2-bits">0010 1100</span></div>
+        <div class="ops-flag" id="op2-flag"></div>
+      </div>
+    </article>
+
+    <article class="ops-card safe" id="ops3">
+      <header>
+        <span class="ops-badge">SAFE</span>
+        <h3>Bitwise &amp; shift</h3>
+        <span class="ops-list">&lt;&lt; &gt;&gt; &amp; | ^</span>
+      </header>
+      <p class="ops-desc">Operate on bits directly; the result is always defined and stays within N bits.</p>
+      <div class="ops-controls">
+        <input type="text" id="op3-a" value="200" />
+        <div class="seg" id="op3-op">
+          <button data-op="shl" class="active">&lt;&lt;</button>
+          <button data-op="shr">&gt;&gt;</button>
+          <button data-op="and">&amp;</button>
+          <button data-op="or">|</button>
+          <button data-op="xor">^</button>
+        </div>
+        <input type="text" id="op3-b" value="3" />
+        <div class="seg" id="op3-width">
+          <button data-w="8" class="active">8</button>
+          <button data-w="16">16</button>
+          <button data-w="32">32</button>
+        </div>
+      </div>
+      <div class="ops-result">
+        <div><span class="ops-rlab">A:</span> <span class="bits" id="op3-abits">1100 1000</span></div>
+        <div><span class="ops-rlab" id="op3-blab">B:</span> <span class="bits" id="op3-bbits">3 positions</span></div>
+        <div><span class="ops-rlab">=</span> <span class="val" id="op3-result">64</span> &nbsp; <span class="bits" id="op3-rbits">0100 0000</span></div>
+        <div class="ops-flag flag-ok">✓ SAFE — bitwise operators produce a defined result for every input.</div>
+      </div>
+    </article>
+
+    <article class="ops-card safe" id="ops4">
+      <header>
+        <span class="ops-badge">SAFE</span>
+        <h3>Compare</h3>
+        <span class="ops-list">== ≠ &lt; &gt; ≤ ≥</span>
+      </header>
+      <p class="ops-desc">Returns true or false. Cannot overflow — but the same bytes can compare differently in signed vs unsigned.</p>
+      <div class="ops-controls">
+        <input type="text" id="op4-a" value="200" />
+        <div class="seg" id="op4-op">
+          <button data-op="eq" class="active">==</button>
+          <button data-op="ne">≠</button>
+          <button data-op="lt">&lt;</button>
+          <button data-op="gt">&gt;</button>
+          <button data-op="le">≤</button>
+          <button data-op="ge">≥</button>
+        </div>
+        <input type="text" id="op4-b" value="100" />
+        <div class="seg" id="op4-width">
+          <button data-w="8" class="active">8</button>
+          <button data-w="16">16</button>
+          <button data-w="32">32</button>
+        </div>
+      </div>
+      <div class="ops-result">
+        <div><span class="ops-rlab">unsigned:</span> <span class="val" id="op4-u">false</span> <span class="ops-detail" id="op4-udetail">(200 == 100)</span></div>
+        <div><span class="ops-rlab">signed:</span> <span class="val" id="op4-s">false</span> <span class="ops-detail" id="op4-sdetail">(−56 == 100)</span></div>
+        <div class="ops-flag flag-ok" id="op4-flag">✓ SAFE — compares always produce true/false, never overflow.</div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+
+<!-- ============= SECTION V : FIELD NOTES ============= -->
+<section class="specimen" id="sec5">
+  <div class="head">
+    <div class="roman reveal">V<span class="small">Specimen five — real-world bugs</span></div>
+    <div>
+      <h2 class="reveal"><em>Overflow</em> bugs at large in real software.</h2>
+      <p class="deck reveal delay-1">Six historical incidents in which integer overflow caused real damage. In every case the program followed its rules precisely; the bug was that nobody had written a rule for what should happen when a counter exceeded its width.</p>
+    </div>
+  </div>
+
+  <div class="fieldnotes reveal delay-2">
+    <article class="note">
+      <span class="stamp">CLASSIC</span>
+      <div class="yr">04 JUN 1996 ⁄ KOUROU, FRENCH GUIANA</div>
+      <h4>Ariane 5, <em>flight 501</em></h4>
+      <div class="casefile">CASE FILE / OVERFLOW · 16‑BIT SIGNED</div>
+      <p>A horizontal‑velocity reading from the inertial reference system was converted from a 64‑bit float to a 16‑bit signed integer. Forty seconds into flight the value <strong>exceeded 32 767</strong>; the conversion threw an exception; the rocket self‑destructed.</p>
+      <dl class="crit">
+        <dt>damage</dt><dd>≈ US$ 370 million</dd>
+        <dt>cage</dt><dd>i16 · [−32 768, 32 767]</dd>
+      </dl>
+      <a class="source" href="https://en.wikipedia.org/wiki/Ariane_flight_V88" target="_blank" rel="noopener">Wikipedia · Ariane flight V88</a>
+    </article>
+
+    <article class="note">
+      <span class="stamp">PENDING</span>
+      <div class="yr">19 JAN 2038 ⁄ EVERYWHERE</div>
+      <h4>The <em>Year 2038</em> problem</h4>
+      <div class="casefile">CASE FILE / OVERFLOW · UNIX TIME · I32</div>
+      <p>POSIX time counts seconds since 1 Jan 1970 in a 32‑bit signed integer. At 03:14:07 UTC on 19 January 2038 the counter will reach 2 147 483 647 — and the next tick will roll it to <strong>−2 147 483 648</strong>, suddenly placing the world in December 1901.</p>
+      <dl class="crit">
+        <dt>seam at</dt><dd>2 147 483 647 s</dd>
+        <dt>cage</dt><dd>i32 · time_t (legacy)</dd>
+      </dl>
+      <a class="source" href="https://en.wikipedia.org/wiki/Year_2038_problem" target="_blank" rel="noopener">Wikipedia · Year 2038 problem</a>
+    </article>
+
+    <article class="note">
+      <span class="stamp">CULTURAL</span>
+      <div class="yr">03 DEC 2014 ⁄ INTERNET</div>
+      <h4>Gangnam <em>Style</em></h4>
+      <div class="casefile">CASE FILE / NEAR‑MISS · I32</div>
+      <p>The video accumulated views toward 2³¹ − 1 = 2 147 483 647, the maximum of YouTube's signed 32‑bit counter. To prevent a wraparound to negative views, the platform quietly upgraded the counter to <strong>64‑bit</strong> before the seam was reached.</p>
+      <dl class="crit">
+        <dt>migration</dt><dd>i32 → i64</dd>
+        <dt>new ceiling</dt><dd>≈ 9.22 × 10¹⁸</dd>
+      </dl>
+      <a class="source" href="https://en.wikipedia.org/wiki/Gangnam_Style" target="_blank" rel="noopener">Wikipedia · Gangnam Style</a>
+    </article>
+
+    <article class="note">
+      <span class="stamp">ARCADE</span>
+      <div class="yr">1980 ⁄ NAMCO PAC‑MAN</div>
+      <h4>The <em>kill screen</em></h4>
+      <div class="casefile">CASE FILE / OVERFLOW · U8 LEVEL COUNTER</div>
+      <p>Pac‑Man stores the level number in a single unsigned byte. Reaching level <strong>256</strong> wraps the byte to 0, and a routine that draws fruit reads invalid memory — corrupting the right half of the maze into garbled letters. Unwinnable by design accident.</p>
+      <dl class="crit">
+        <dt>seam</dt><dd>level 256</dd>
+        <dt>cage</dt><dd>u8 · [0, 255]</dd>
+      </dl>
+      <a class="source" href="https://en.wikipedia.org/wiki/Kill_screen" target="_blank" rel="noopener">Wikipedia · Kill screen</a>
+    </article>
+
+    <article class="note">
+      <span class="stamp">SECURITY</span>
+      <div class="yr">RECURRING ⁄ CVE DATABASE</div>
+      <h4>The integer‑<em>overflow</em> exploit</h4>
+      <div class="casefile">CASE FILE / WEAPONISED OVERFLOW</div>
+      <p>An attacker requests a buffer of <code>n × m</code> bytes, choosing values whose product overflows to a small number. The system allocates a tiny buffer, then attempts to write the originally requested bytes — overrunning the allocation and yielding <strong>arbitrary code execution</strong>.</p>
+      <dl class="crit">
+        <dt>vector</dt><dd>size_t multiplication</dd>
+        <dt>defence</dt><dd>checked arithmetic</dd>
+      </dl>
+      <a class="source" href="https://cwe.mitre.org/data/definitions/190.html" target="_blank" rel="noopener">MITRE · CWE‑190 Integer Overflow</a>
+    </article>
+
+    <article class="note">
+      <span class="stamp">FINANCE</span>
+      <div class="yr">1983 ⁄ VANCOUVER STOCK EXCHANGE</div>
+      <h4>Truncation, <em>compounded</em></h4>
+      <div class="casefile">CASE FILE / FIXED‑POINT TRUNCATION</div>
+      <p>The exchange's index truncated each calculation to three decimals rather than rounding. Three thousand updates per day, twenty‑two months later, the index had silently bled <strong>574 points</strong> — about half its value — through repeated downward drift.</p>
+      <dl class="crit">
+        <dt>drift</dt><dd>≈ 25 points / month</dd>
+        <dt>fix</dt><dd>recomputation, four decimals</dd>
+      </dl>
+      <a class="source" href="https://en.wikipedia.org/wiki/Vancouver_Stock_Exchange" target="_blank" rel="noopener">Wikipedia · Vancouver Stock Exchange</a>
+    </article>
+  </div>
+</section>
+
+
+<!-- ============= SECTION VI : LIVE SPECIMENS (C COMPILER) ============= -->
+<section class="specimen" id="sec6">
+  <div class="head">
+    <div class="roman reveal">VI<span class="small">Specimen six — live C programs</span></div>
+    <div>
+      <h2 class="reveal">Six overflow bugs you can <em>run</em>.</h2>
+      <p class="deck reveal delay-1">A small ANSI‑C runtime, built into this page, executes real programs in the browser. Edit the highlighted operands, press <em>compile &amp; run</em>, and watch the bug emerge in the terminal — exactly as it would on a host machine.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      Six C programs, each demonstrating a different kind of integer overflow. Every program is real C: declarations, types, control flow, <code>printf</code>. The runtime honours fixed‑width integer semantics down to the byte.
+    </p>
+    <div>
+      <p>The integer types you have studied — <code>uint8_t</code>, <code>int32_t</code>, <code>size_t</code> — appear here as they would in working production code. The operands shown in <strong>amber</strong> are editable; everything else is the program itself, untouched. After a run, if overflow occurred, the offending line is marked in red.</p>
+      <p>The terminal beside the code is not decoration: it shows the program's <code>stdout</code>, character by character, with the same exit semantics a real <code>./a.out</code> would produce.</p>
+    </div>
+  </div>
+
+  <div class="instrument reveal delay-3" id="liveinst">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+    <div class="panel">
+      <span class="badge">INSTRUMENT 06 ⁄ LIVE COMPILER</span>
+      <span class="title">Scenarios in C, executed in‑page.</span>
+      <span class="led"><i class="on"></i><i class="alarm" id="run-alarm"></i></span>
+    </div>
+    <div class="stage" style="padding:0">
+      <div class="scenario-tabs" id="sc-tabs"><!-- populated --></div>
+      <div class="code-runner">
+        <div class="code-col">
+          <div class="step-tabs" id="sc-steps"></div>
+          <pre class="code-block" id="sc-code"></pre>
+        </div>
+        <div class="terminal">
+          <div class="term-header">
+            <span id="sc-tty">tty · stdout</span>
+            <span class="term-dots"><span></span><span></span><span></span></span>
+          </div>
+          <div class="term-body" id="sc-output">
+            <span class="meta">// no output yet — alter the inputs above and press <b style="color:#FFB060">compile &amp; run</b>.</span>
+          </div>
+        </div>
+      </div>
+      <div class="runner-controls">
+        <div class="info" id="sc-info">SCENARIO · <b id="sc-info-name">—</b> · target: x86‑64 · gcc 13.2 (simulated)</div>
+        <div class="actions">
+          <button class="btn" id="sc-reset">reset inputs</button>
+          <button class="btn-run" id="sc-run">compile &amp; run</button>
+        </div>
+      </div>
+      <div class="verdict-panel">
+        <h6>What just happened</h6>
+        <div class="what-happened" id="sc-verdict">
+          Press <em>compile &amp; run</em> and the program will execute. The verdict appears here, explaining whether the cage held — and if it did not, where the silent corruption was injected.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============= SECTION VII : THE ANTIVENOMS ============= -->
+<section class="specimen" id="sec7">
+  <div class="head">
+    <div class="roman reveal">VII<span class="small">Specimen seven — secure fixes</span></div>
+    <div>
+      <h2 class="reveal">A <em>secure fix</em> for every live program.</h2>
+      <p class="deck reveal delay-1">Each of the six C programs in <em>Live Specimens</em> above has a corresponding patch below — and only those programs do. Every fix is a small, idiomatic change: no new dependencies, just different choices about types, validation, and where the check runs.</p>
+    </div>
+  </div>
+
+  <div class="body reveal delay-2">
+    <p class="annotation">
+      Each card is a side‑by‑side diff between the original program and the secured version. Tokens that <em>changed</em> are framed in <span style="background:rgba(255,136,112,0.22);padding:0 4px;border-radius:2px;box-shadow:0 0 0 1px rgba(255,136,112,0.5);">red</span> on the vulnerable side and <span style="background:rgba(151,215,127,0.22);padding:0 4px;border-radius:2px;box-shadow:0 0 0 1px rgba(151,215,127,0.5);">green</span> on the patched side. New <em>lines</em> are striped in green with a leading <code>+</code>.
+    </p>
+    <div>
+      <p>Almost every defense against integer overflow falls into one of two complementary strategies, marked on each remedy's tag. <strong style="color:var(--moss);">PRE‑CHECK</strong> — a <em>precondition test</em> — asks "would this operation overflow?" <em>before</em> running it, and refuses if so (Remedies 02, 03, 05). <strong style="color:var(--cobalt);">POST‑CHECK</strong> — a <em>postcondition test</em> — runs the operation and then asks "did it overflow?", undoing the result if it did (Remedies 04, 06). The patched code in every remedy carries an explicit <code>/* PRE-CONDITION */</code> or <code>/* POST-CHECK */</code> comment naming the strategy in use. The third option, <strong style="color:var(--amber);">TYPE</strong>‑level prevention, picks a wider type so neither check is needed at all — that is what Remedy 01 does, and is the cheapest defense when storage permits.</p>
+      <p>The remedies cluster further around four habits: <strong>widen before you narrow</strong>, <strong>validate the original input</strong> (not what survives a cast), <strong>use checked arithmetic when wrap‑around is possible</strong>, and <strong>let the standard library compute sizes for you</strong> when it can. The closing card distils these into a single defensive checklist.</p>
+    </div>
+  </div>
+
+  <div class="remedies reveal delay-3">
+    <article class="remedy remedy-wide">
+      <div class="rem-head">
+        <span class="rem-no">CLOSING ⁄ Defensive principles</span>
+        <span class="rem-tech">Read this twice</span>
+      </div>
+      <h3>Three strategies, three habits — read this <em>first</em>.</h3>
+      <div class="principles">
+        <div class="principle">
+          <span class="ix">i.</span>
+          <span class="text"><strong style="color:var(--moss);">Precondition testing.</strong> Ask <em>"would this operation overflow?"</em> <em>before</em> performing it; refuse if so. Example: <code>if (a &gt; UINT_MAX − b) return ‑1; result = a + b;</code> Cheap, portable, doesn't need any builtin or library — but the rearranged inequality must be expressible in the operand's type.</span>
+        </div>
+        <div class="principle">
+          <span class="ix">ii.</span>
+          <span class="text"><strong style="color:var(--cobalt);">Postcondition testing.</strong> Run the operation and ask <em>"did it overflow?"</em>; undo the result if it did. Example: <code>if (__builtin_add_overflow(a, b, &amp;r)) return ‑1;</code> The compiler folds this into a single CPU instruction (CF/OF flag) and is the only safe option for signed integers, where naïve <code>if (a + b &lt; a)</code> is undefined behaviour.</span>
+        </div>
+        <div class="principle">
+          <span class="ix">iii.</span>
+          <span class="text"><strong style="color:var(--amber);">Type‑level prevention.</strong> Choose a type wide enough that overflow cannot happen. <code>uint16_t bytes = a × b</code> can wrap; <code>size_t bytes = (size_t)a × b</code> cannot, for any 16‑bit a, b. The cheapest defense — no runtime cost — but only available when a wider type fits in your storage budget.</span>
+        </div>
+        <div class="principle">
+          <span class="ix">iv.</span>
+          <span class="text"><strong>Trust no input, including your own.</strong> Sizes from network protocols, file formats, and user APIs are all hostile. Even values your own code computes can be hostile if part of the pipeline came from outside.</span>
+        </div>
+        <div class="principle">
+          <span class="ix">v.</span>
+          <span class="text"><strong>Compile with the safety nets engaged.</strong> Each flag earns its place:
+            <code>-Wall -Wextra</code> enable the broad set of compiler warnings (uninitialised variables, suspicious comparisons, dead branches);
+            <code>-Wconversion</code> warns on every implicit narrowing — exactly the silent <code>int → int8_t</code> cast that the live programs exploit;
+            <code>-Wsign-conversion</code> catches the signed‑↔‑unsigned mismatches that produce CWE‑195 (the bug in Remedy 05);
+            <code>-fsanitize=undefined</code> (UBSan) instruments the binary so that any signed overflow, division by zero, or out‑of‑bounds index aborts immediately with a precise diagnostic — use it in CI and during fuzzing;
+            <code>-ftrapv</code> (or its modern equivalent <code>-fsanitize=signed-integer-overflow,trap</code>) emits CPU trap instructions on signed overflow, faulting the program rather than continuing with corrupted state — recommended for long‑running services where any silent wrap is unacceptable.</span>
+        </div>
+        <div class="principle">
+          <span class="ix">vi.</span>
+          <span class="text"><strong>Pick a language that defaults to safe.</strong> <em>Rust</em> panics on signed overflow in debug builds and requires explicit <code>wrapping_add</code> / <code>checked_add</code> / <code>saturating_add</code> for the wrap, trap, or clamp behaviour you actually want; the type system carries the choice. <em>Zig</em> distinguishes <code>+</code> (trap) from <code>+%</code> (wrap). Java, C#, Python, Swift all check signed arithmetic by default. C and C++ make safety a per‑expression decision — <em>make it</em>, but if the budget allows, write the new code in something that makes that decision for you.</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="remedy" id="rem-counter">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 01 ⁄ The Counter</span>
+        <span class="rem-tech tech-type">TYPE · Widen the result</span>
+      </div>
+      <h3>Promote the <em>accumulator</em>, not the operands.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">A byte cannot hold a sum that exceeds 255. By widening the destination type — and casting at least one operand so the addition itself happens in the wider type — the result has nowhere to overflow into. For two‑byte sums, sixteen bits suffice; for two 32‑bit values, use <code>int64_t</code>.</p>
+    </article>
+
+    <article class="remedy" id="rem-loop">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 02 ⁄ The Loop</span>
+        <span class="rem-tech tech-pre">PRE‑CHECK · Validate the bound</span>
+      </div>
+      <h3>Size the <em>counter</em> to the limit it must reach.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">A loop counter must accommodate the maximum value its condition compares against — and one more, since the increment runs first. The idiomatic choice for "an index into a thing in memory" is <code>size_t</code>; it is large enough on every conforming platform. With a correctly‑sized counter, the safety cap becomes unnecessary.</p>
+    </article>
+
+    <article class="remedy" id="rem-index">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 03 ⁄ The Index</span>
+        <span class="rem-tech tech-pre">PRE‑CHECK · Validate before narrow</span>
+      </div>
+      <h3>Check the <em>original</em>, then narrow.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">Narrowing destroys information; a bounds check on the destination type sees only the residue. Always validate the <em>untouched</em> input — both lower and upper bound — and cast to the narrower index type only after the check has passed. Using <code>size_t</code> for the index also forecloses the negative‑index path entirely.</p>
+    </article>
+
+    <article class="remedy" id="rem-allocator">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 04 ⁄ The Allocator</span>
+        <span class="rem-tech tech-post">POST‑CHECK · Library handles size</span>
+      </div>
+      <h3>Use <em>calloc</em>, which detects size overflow.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">The standard library's <code>calloc</code> already detects size overflow and returns <code>NULL</code> — using it is the simplest and most portable defence. Where you must compute a size yourself, GCC and Clang provide <code>__builtin_mul_overflow</code> (and <code>_add</code>, <code>_sub</code>) that report wrap‑around through their boolean return value.</p>
+    </article>
+
+    <article class="remedy" id="rem-convert">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 05 ⁄ The Conversion</span>
+        <span class="rem-tech tech-pre">PRE‑CHECK · Validate signed input</span>
+      </div>
+      <h3>Reject negatives <em>before</em> the implicit cast.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">A signed‑to‑unsigned conversion happens silently every time a signed <code>int</code> meets a function that takes a <code>size_t</code> (<code>memcpy</code>, <code>memset</code>, <code>read</code>, <code>fread</code>). The fix is to validate <em>both</em> bounds — lower and upper — on the original signed value, before the implicit cast erases the sign. <code>if (len &lt; 0 || (size_t)len &gt; sizeof(buf))</code> stops the negative path that the original "<code>len &lt; BUFFER_SIZE</code>" check missed. This is CWE‑195 in the wild.</p>
+    </article>
+
+    <article class="remedy" id="rem-packet">
+      <div class="rem-head">
+        <span class="rem-no">REMEDY 06 ⁄ The Packet</span>
+        <span class="rem-tech tech-post">POST‑CHECK · Library handles size</span>
+      </div>
+      <h3>Let <em>calloc</em> reject impossible sizes.</h3>
+      <div class="rem-codes">
+        <div class="rem-code vuln">
+          <span class="rem-tag">VULNERABLE</span>
+          <pre></pre>
+        </div>
+        <div class="rem-code safe">
+          <span class="rem-tag">PATCHED</span>
+          <pre></pre>
+        </div>
+      </div>
+      <p class="rem-why">The original CVE‑2002‑0639 patch widened the type of <code>nresp</code> and used a checked allocator. Both choices matter: a wide <code>size_t</code> for <code>count</code> means the multiplication has room; <code>calloc(count, 8)</code> additionally short‑circuits the allocation when the product would overflow <em>size_t</em>, returning <code>NULL</code> rather than handing back a tiny chunk for a huge write. The lesson generalises: any size computed as <em>n × m</em> on attacker‑influenced inputs should run through <code>calloc</code> or <code>__builtin_mul_overflow</code>.</p>
+    </article>
+
+  </div>
+</section>
+
+
+<!-- ============= COLOPHON ============= -->
+<section class="colophon">
+  <div>
+    <h6>SET IN</h6>
+    <p>Fraunces, by Phaedra Charles &amp; Flavia Zimbardi. Newsreader, by Production Type. JetBrains Mono, by JetBrains.</p>
+  </div>
+  <div>
+    <h6>NOTES</h6>
+    <p>All arithmetic herein is performed in the host machine's BigInt engine and then truncated, in software, to the chosen cage. The viewport is rendered with three.js. Findings are illustrative; the laws are universal.</p>
+  </div>
+  <div>
+    <h6>FILED</h6>
+    <p>Bureau of Numerical Artifacts, Annex IV. <span class="signature">— end of file —</span></p>
+  </div>
+</section>
+
+</div>
+
+<script>
+/* ============================================================
+   MATH PRIMITIVES — fixed‑width arithmetic with BigInt
+   ============================================================ */
+
+function maskN(N) { return (1n << BigInt(N)) - 1n; }
+function modN(value, N) {
+  const m = 1n << BigInt(N);
+  return ((BigInt(value) % m) + m) % m;
+}
+function toSignedN(uval, N) {
+  const half = 1n << BigInt(N - 1);
+  const m = 1n << BigInt(N);
+  return uval >= half ? uval - m : uval;
+}
+function toUnsignedN(sval, N) { return modN(sval, N); }
+
+function bitsOf(value, N) {
+  const u = modN(value, N);
+  return u.toString(2).padStart(N, '0');
+}
+function hexOf(value, N) {
+  const u = modN(value, N);
+  const w = Math.ceil(N / 4);
+  return '0x' + u.toString(16).toUpperCase().padStart(w, '0');
+}
+
+function compute(a, b, op, N, signed) {
+  const A = BigInt(a), B = BigInt(b);
+  let raw;
+  if (op === 'add') raw = A + B;
+  else if (op === 'sub') raw = A - B;
+  else /* mul */     raw = A * B;
+  const u = modN(raw, N);
+  const s = toSignedN(u, N);
+  const expected = signed ? s : u;
+  const overflowed = raw !== expected;
+  return { raw, u, s, overflowed, op, signed, N };
+}
+
+/* parse permissive input: hex, binary, decimal */
+function parseIntArg(str) {
+  if (typeof str !== 'string') str = String(str);
+  str = str.trim().replace(/_/g, '').replace(/[\s,]/g, '');
+  if (str === '' || str === '-') return 0n;
+  try {
+    if (/^-?0x/i.test(str)) {
+      const sign = str.startsWith('-') ? -1n : 1n;
+      return sign * BigInt(str.replace(/^-?0x/i, '0x'));
+    }
+    if (/^-?0b/i.test(str)) {
+      const sign = str.startsWith('-') ? -1n : 1n;
+      return sign * BigInt('0b' + str.replace(/^-?0b/i, ''));
+    }
+    return BigInt(str);
+  } catch (e) {
+    return 0n;
+  }
+}
+function fmtBig(n) {
+  const s = n.toString();
+  if (s.startsWith('-'))
+    return '−' + s.slice(1).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/* fmtBig but with the leading minus wrapped in a span so it can be styled */
+function fmtSignedHtml(n) {
+  const s = n.toString();
+  if (s.startsWith('-')) {
+    const digits = s.slice(1).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return `<span class="minus">−</span>${digits}`;
+  }
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/* ============================================================
+   BIT GRID — reusable creator
+   ============================================================ */
+function buildBitRow(rowEl, labelEl, N, options) {
+  options = options || {};
+  rowEl.innerHTML = '';
+  labelEl.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const idx = N - 1 - i; // MSB first
+    const cell = document.createElement('div');
+    cell.className = 'bit';
+    cell.dataset.idx = idx;
+    if ((idx) % 8 === 0 && idx !== 0) cell.classList.add('sep');
+    cell.innerHTML = `
+      <div class="cube">
+        <div class="face front">0</div>
+        <div class="face back">1</div>
+      </div>`;
+    if (options.clickable) {
+      cell.style.cursor = 'pointer';
+      cell.addEventListener('click', () => {
+        cell.classList.toggle('on');
+        if (options.onChange) options.onChange();
+      });
+    }
+    rowEl.appendChild(cell);
+
+    const lab = document.createElement('span');
+    lab.textContent = idx;
+    if (idx % 8 === 0 && idx !== 0) lab.classList.add('sep');
+    labelEl.appendChild(lab);
+  }
+}
+function setBits(rowEl, bitstring) {
+  const cells = rowEl.querySelectorAll('.bit');
+  // bitstring is MSB-first; cells are also MSB-first
+  cells.forEach((c, i) => {
+    if (bitstring[i] === '1') c.classList.add('on');
+    else c.classList.remove('on');
+  });
+}
+function readBits(rowEl) {
+  const cells = rowEl.querySelectorAll('.bit');
+  let s = '';
+  cells.forEach(c => s += c.classList.contains('on') ? '1' : '0');
+  return s;
+}
+
+/* ============================================================
+   SECTION I — CAGE GAUGE
+   ============================================================ */
+const cageBody = document.getElementById('cage-tbody');
+function setCageWidth(N) {
+  cageBody.querySelectorAll('tr').forEach(tr => {
+    tr.classList.toggle('active', +tr.dataset.w === N);
+  });
+  document.getElementById('cage-w').textContent = N;
+  const umax = (1n << BigInt(N)) - 1n;
+  const smin = -(1n << BigInt(N - 1));
+  const smax = (1n << BigInt(N - 1)) - 1n;
+  document.getElementById('cage-umax').textContent = fmtBig(umax);
+  document.getElementById('cage-smm').textContent = fmtBig(smin) + ' ⁄ ' + fmtBig(smax);
+}
+cageBody.querySelectorAll('tr').forEach(tr => {
+  tr.style.cursor = 'pointer';
+  tr.addEventListener('click', () => setCageWidth(+tr.dataset.w));
+});
+setCageWidth(32);
+
+
+/* ============================================================
+   SECTION II — TWIN INTERPRETERS
+   ============================================================ */
+const tngState = { N: 8 };
+const tngRow      = document.getElementById('tng-bits');
+const tngLabels   = document.getElementById('tng-labels');
+const tngSlider   = document.getElementById('tng-slider');
+const tngText     = document.getElementById('tng-text');
+const tngFlip     = document.getElementById('tng-flip');
+const tngRand     = document.getElementById('tng-rand');
+const tngWidthSeg = document.getElementById('tng-width');
+
+const TNG_DEFAULTS = { 8: 200n, 16: 50000n, 32: 3000000000n, 64: 1n << 63n };
+const SUPER = ['⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹'];
+function toSuper(n) {
+  return String(n).split('').map(d => SUPER[+d]).join('');
+}
+
+function tngFormatRange(N) {
+  const max = (1n << BigInt(N)) - 1n;
+  return `0 → ${fmtBig(max)}`;
+}
+
+function tngUpdateFromBits() {
+  const N = tngState.N;
+  const bits = readBits(tngRow);
+  const u = bits.length ? BigInt('0b' + bits) : 0n;
+  const half = 1n << BigInt(N - 1);
+  const M = 1n << BigInt(N);
+  const s = u >= half ? u - M : u;
+
+  document.getElementById('tng-u').textContent = fmtBig(u);
+  document.getElementById('tng-s').innerHTML = fmtSignedHtml(s);
+
+  // sync slider (clamped to MAX_SAFE_INTEGER for very large N)
+  const sliderMax = BigInt(Number.MAX_SAFE_INTEGER);
+  const sliderVal = u > sliderMax ? sliderMax : u;
+  tngSlider.value = String(sliderVal);
+
+  // sync text input
+  tngText.value = u.toString();
+}
+
+function tngSetValue(v) {
+  // v is a BigInt (truncated to width)
+  const N = tngState.N;
+  const M = 1n << BigInt(N);
+  const u = ((v % M) + M) % M;
+  setBits(tngRow, u.toString(2).padStart(N, '0'));
+  tngUpdateFromBits();
+}
+
+function tngUpdateDescriptions() {
+  const N = tngState.N;
+  const half = 1n << BigInt(N - 1);
+  const halfStr = fmtBig(half);
+  const exp = toSuper(N - 1);
+  document.getElementById('tng-as-u').textContent = `u${N}`;
+  document.getElementById('tng-as-s').textContent = `i${N}`;
+  document.getElementById('tng-desc-u').textContent =
+    `All bits contribute positive weight. Leftmost bit is worth ${halfStr} (2${exp}).`;
+  document.getElementById('tng-desc-s').textContent =
+    `Leftmost bit reverses sign — its weight becomes −${halfStr} (−2${exp}).`;
+  document.getElementById('tng-title').textContent =
+    `${N === 8 ? 'One byte' : `${N} bits`}. Two readings.`;
+  // slider range note
+  const noteEl = document.getElementById('tng-sweep-note');
+  if (noteEl) {
+    if (N <= 32) {
+      noteEl.textContent = `(${tngFormatRange(N)})`;
+    } else {
+      noteEl.textContent = `(0 → 2⁵³ — slider precision limited above this)`;
+    }
+  }
+  // slider max
+  const sliderMax = Math.min(Number((1n << BigInt(N)) - 1n), Number.MAX_SAFE_INTEGER);
+  tngSlider.max = String(sliderMax);
+}
+
+function tngSetWidth(N) {
+  tngState.N = N;
+  buildBitRow(tngRow, tngLabels, N, {
+    clickable: true,
+    onChange: tngUpdateFromBits
+  });
+  tngUpdateDescriptions();
+  tngSetValue(TNG_DEFAULTS[N]);
+}
+
+/* wire controls */
+tngSlider.addEventListener('input', () => tngSetValue(BigInt(tngSlider.value)));
+tngText.addEventListener('input', () => {
+  const v = parseIntArg(tngText.value);
+  // truncate to width on input but don't overwrite text — let user keep typing
+  const N = tngState.N;
+  const M = 1n << BigInt(N);
+  const u = ((v % M) + M) % M;
+  setBits(tngRow, u.toString(2).padStart(N, '0'));
+  // update only the readout, not the text input (preserves caret/typing)
+  const half = 1n << BigInt(N - 1);
+  const s = u >= half ? u - M : u;
+  document.getElementById('tng-u').textContent = fmtBig(u);
+  document.getElementById('tng-s').innerHTML = fmtSignedHtml(s);
+  const sliderMax = BigInt(Number.MAX_SAFE_INTEGER);
+  tngSlider.value = String(u > sliderMax ? sliderMax : u);
+});
+tngFlip.addEventListener('click', () => {
+  tngRow.querySelectorAll('.bit').forEach(c => c.classList.toggle('on'));
+  tngUpdateFromBits();
+});
+document.getElementById('tng-clear').addEventListener('click', () => {
+  tngSetValue(0n);
+});
+tngRand.addEventListener('click', () => {
+  const N = tngState.N;
+  // build a random BigInt of N bits, byte by byte
+  let v = 0n;
+  for (let i = 0; i < N; i += 8) {
+    const byte = BigInt(Math.floor(Math.random() * 256));
+    v = (v << 8n) | byte;
+  }
+  // mask to width
+  v = v & ((1n << BigInt(N)) - 1n);
+  tngSetValue(v);
+});
+tngWidthSeg.querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    tngWidthSeg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    tngSetWidth(+b.dataset.w);
+  });
+});
+
+tngSetWidth(8);
+
+
+/* ============================================================
+   SECTION III — ADD/SUB CALCULATOR
+   ============================================================ */
+const wrapState = { N: 8, signed: false, op: 'add' };
+const wrapA = document.getElementById('wrap-a');
+const wrapB = document.getElementById('wrap-b');
+
+/* format a value's N bits with a space every 4 bits, MSB first */
+function fmtBitsGrouped(value, N) {
+  const M = 1n << BigInt(N);
+  const u = ((BigInt(value) % M) + M) % M;
+  let bits = u.toString(2).padStart(N, '0');
+  let out = '';
+  for (let i = 0; i < bits.length; i++) {
+    if (i > 0 && (bits.length - i) % 4 === 0) out += ' ';
+    out += bits[i];
+  }
+  return out;
+}
+
+function wrapRender() {
+  const a = parseIntArg(wrapA.value);
+  const b = parseIntArg(wrapB.value);
+  const N = wrapState.N;
+  const r = compute(a, b, wrapState.op, N, wrapState.signed);
+
+  const cageDisplay = wrapState.signed ? r.s : r.u;
+  const cageLabel = wrapState.signed ? `i${N}` : `u${N}`;
+  const opSym = wrapState.op === 'add' ? '+' : '−';
+
+  // arithmetic side (decimal)
+  document.getElementById('wrap-a-dec').textContent = fmtBig(a);
+  document.getElementById('wrap-b-dec').textContent = fmtBig(b);
+  document.getElementById('wrap-result-dec').textContent = fmtBig(cageDisplay);
+  document.getElementById('wrap-op-l').textContent = opSym;
+
+  // bits side (binary)
+  document.getElementById('wrap-a-bits').textContent = fmtBitsGrouped(a, N);
+  document.getElementById('wrap-b-bits').textContent = fmtBitsGrouped(b, N);
+  document.getElementById('wrap-result-bits').textContent = fmtBitsGrouped(r.u, N);
+  document.getElementById('wrap-op-r').textContent = opSym;
+  document.getElementById('wrap-bits-header').textContent = `BITS · ${cageLabel}`;
+
+  // overflow state
+  document.getElementById('wrap-eq-arith').classList.toggle('over', r.overflowed);
+  document.getElementById('wrap-eq-bits').classList.toggle('over', r.overflowed);
+  document.getElementById('wrap-alarm').classList.toggle('on', r.overflowed);
+
+  const strip = document.getElementById('wrap-overflow-strip');
+  if (r.overflowed) {
+    strip.style.display = '';
+    document.getElementById('wrap-raw-info').textContent = fmtBig(r.raw);
+    document.getElementById('wrap-cage-info').textContent = fmtBig(cageDisplay);
+  } else {
+    strip.style.display = 'none';
+  }
+}
+
+[wrapA, wrapB].forEach(el => el.addEventListener('input', wrapRender));
+document.querySelectorAll('#wrap-op button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#wrap-op button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    wrapState.op = b.dataset.op;
+    wrapRender();
+  });
+});
+document.querySelectorAll('#wrap-width button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#wrap-width button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    wrapState.N = +b.dataset.w;
+    wrapRender();
+  });
+});
+document.querySelectorAll('#wrap-sign button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#wrap-sign button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    wrapState.signed = b.dataset.s === 's';
+    wrapRender();
+  });
+});
+wrapRender();
+
+
+/* ============================================================
+   SECTION IV — OPERATIONS (safe vs unsafe, four demos)
+   ============================================================ */
+
+function activeDataAttr(segId, key) {
+  const btn = document.querySelector(`#${segId} .active`);
+  return btn ? btn.dataset[key] : null;
+}
+function wireSeg(segId, onChange) {
+  document.querySelectorAll(`#${segId} button`).forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll(`#${segId} button`).forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      onChange();
+    });
+  });
+}
+
+/* ---- Demo 1: Assignment (truncation) ---- */
+function op1Render() {
+  const v  = parseIntArg(document.getElementById('op1-val').value);
+  const N  = +activeDataAttr('op1-width', 'w');
+  const sg = activeDataAttr('op1-sign', 's') === 's';
+  const M  = 1n << BigInt(N);
+  const u  = ((v % M) + M) % M;
+  const s  = u >= (1n << BigInt(N - 1)) ? u - M : u;
+  const stored = sg ? s : u;
+  const truncated = v !== stored;
+
+  document.getElementById('op1-stored').textContent = fmtBig(stored);
+  document.getElementById('op1-bits').textContent = fmtBitsGrouped(u, N);
+  const flag = document.getElementById('op1-flag');
+  if (truncated) {
+    flag.className = 'ops-flag flag-trunc';
+    flag.innerHTML = `⚠ TRUNCATED — value <em>${fmtBig(v)}</em> doesn't fit in ${sg?'i':'u'}${N}; high bits were silently dropped.`;
+  } else {
+    flag.className = 'ops-flag flag-ok';
+    flag.innerHTML = `✓ FITS — value preserved without loss.`;
+  }
+}
+document.getElementById('op1-val').addEventListener('input', op1Render);
+wireSeg('op1-width', op1Render);
+wireSeg('op1-sign', op1Render);
+
+/* ---- Demo 2: Arithmetic (overflow + truncation) ---- */
+function op2Render() {
+  const a  = parseIntArg(document.getElementById('op2-a').value);
+  const b  = parseIntArg(document.getElementById('op2-b').value);
+  const op = activeDataAttr('op2-op', 'op');
+  const N  = +activeDataAttr('op2-width', 'w');
+  const sg = activeDataAttr('op2-sign', 's') === 's';
+
+  const flag = document.getElementById('op2-flag');
+  if (op === 'div' && b === 0n) {
+    document.getElementById('op2-raw').textContent = '— (div by 0)';
+    document.getElementById('op2-stored').textContent = '— (undefined)';
+    document.getElementById('op2-bits').textContent = '';
+    flag.className = 'ops-flag flag-over';
+    flag.innerHTML = '⚠ DIVISION BY ZERO — undefined behaviour in C.';
+    return;
+  }
+
+  let raw;
+  if (op === 'add') raw = a + b;
+  else if (op === 'sub') raw = a - b;
+  else if (op === 'mul') raw = a * b;
+  else /* div */     raw = a / b;  // BigInt truncates toward zero
+
+  const M  = 1n << BigInt(N);
+  const u  = ((raw % M) + M) % M;
+  const s  = u >= (1n << BigInt(N - 1)) ? u - M : u;
+  const stored = sg ? s : u;
+  const overflowed = raw !== stored;
+
+  document.getElementById('op2-raw').textContent = fmtBig(raw);
+  document.getElementById('op2-stored').textContent = fmtBig(stored);
+  document.getElementById('op2-bits').textContent = fmtBitsGrouped(u, N);
+  if (overflowed) {
+    flag.className = 'ops-flag flag-over';
+    flag.innerHTML = `⚠ OVERFLOW — raw result <em>${fmtBig(raw)}</em> doesn't fit in ${sg?'i':'u'}${N}; cage retains <em>${fmtBig(stored)}</em>.`;
+  } else {
+    flag.className = 'ops-flag flag-ok';
+    flag.innerHTML = '✓ FITS — no overflow.';
+  }
+}
+['op2-a','op2-b'].forEach(id => document.getElementById(id).addEventListener('input', op2Render));
+wireSeg('op2-op', op2Render);
+wireSeg('op2-width', op2Render);
+wireSeg('op2-sign', op2Render);
+
+/* ---- Demo 3: Bitwise & shift (safe) ---- */
+function op3Render() {
+  const a  = parseIntArg(document.getElementById('op3-a').value);
+  const b  = parseIntArg(document.getElementById('op3-b').value);
+  const op = activeDataAttr('op3-op', 'op');
+  const N  = +activeDataAttr('op3-width', 'w');
+  const M  = 1n << BigInt(N);
+  const aMod = ((a % M) + M) % M;
+  const bMod = ((b % M) + M) % M;
+
+  let result;
+  const isShift = (op === 'shl' || op === 'shr');
+  if (op === 'shl') {
+    const sh = bMod & (BigInt(N) - 1n);  // mask shift count to log2(N) bits, like x86
+    result = (aMod << sh) & (M - 1n);
+  } else if (op === 'shr') {
+    const sh = bMod & (BigInt(N) - 1n);
+    result = aMod >> sh;
+  } else if (op === 'and') result = aMod & bMod;
+    else if (op === 'or')  result = aMod | bMod;
+    else /* xor */          result = aMod ^ bMod;
+
+  document.getElementById('op3-abits').textContent = fmtBitsGrouped(aMod, N);
+  document.getElementById('op3-blab').textContent = isShift ? 'by:' : 'B:';
+  document.getElementById('op3-bbits').textContent = isShift
+    ? `${bMod & (BigInt(N) - 1n)} position${(bMod & (BigInt(N) - 1n)) === 1n ? '' : 's'}`
+    : fmtBitsGrouped(bMod, N);
+  document.getElementById('op3-result').textContent = fmtBig(result);
+  document.getElementById('op3-rbits').textContent = fmtBitsGrouped(result, N);
+}
+['op3-a','op3-b'].forEach(id => document.getElementById(id).addEventListener('input', op3Render));
+wireSeg('op3-op', op3Render);
+wireSeg('op3-width', op3Render);
+
+/* ---- Demo 4: Compare (safe, but type-dependent) ---- */
+function op4Render() {
+  const a  = parseIntArg(document.getElementById('op4-a').value);
+  const b  = parseIntArg(document.getElementById('op4-b').value);
+  const op = activeDataAttr('op4-op', 'op');
+  const N  = +activeDataAttr('op4-width', 'w');
+  const M  = 1n << BigInt(N);
+  const half = 1n << BigInt(N - 1);
+  const aU = ((a % M) + M) % M;
+  const bU = ((b % M) + M) % M;
+  const aS = aU >= half ? aU - M : aU;
+  const bS = bU >= half ? bU - M : bU;
+
+  const symMap = { eq:'==', ne:'≠', lt:'<', gt:'>', le:'≤', ge:'≥' };
+  const cmp = (x, y) => {
+    switch (op) {
+      case 'eq': return x === y;
+      case 'ne': return x !== y;
+      case 'lt': return x < y;
+      case 'gt': return x > y;
+      case 'le': return x <= y;
+      case 'ge': return x >= y;
+    }
+  };
+  const cu = cmp(aU, bU);
+  const cs = cmp(aS, bS);
+
+  const uEl = document.getElementById('op4-u');
+  const sEl = document.getElementById('op4-s');
+  uEl.textContent = cu ? 'true' : 'false';
+  sEl.textContent = cs ? 'true' : 'false';
+  document.getElementById('op4-udetail').textContent = `(${fmtBig(aU)} ${symMap[op]} ${fmtBig(bU)})`;
+  document.getElementById('op4-sdetail').textContent = `(${fmtBig(aS)} ${symMap[op]} ${fmtBig(bS)})`;
+
+  const flag = document.getElementById('op4-flag');
+  if (cu === cs) {
+    flag.className = 'ops-flag flag-ok';
+    flag.innerHTML = '✓ SAFE — compares always produce true/false; here both interpretations agree.';
+  } else {
+    flag.className = 'ops-flag flag-trunc';
+    flag.innerHTML = '⚠ SAFE BUT MISMATCH — same bytes, different result depending on signed vs unsigned interpretation.';
+  }
+}
+['op4-a','op4-b'].forEach(id => document.getElementById(id).addEventListener('input', op4Render));
+wireSeg('op4-op', op4Render);
+wireSeg('op4-width', op4Render);
+
+op1Render();
+op2Render();
+op3Render();
+op4Render();
+
+
+/* ============================================================
+   SECTION VI — LIVE C COMPILER
+   ============================================================ */
+
+const scenarios = [
+  {
+    id: 'counter',
+    name: 'The Counter',
+    blurb: 'Two bytes, summed.',
+    file: 'counter.c',
+    code:
+`#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    uint8_t score = {{a}};
+    uint8_t bonus = {{b}};
+    uint8_t total = score + bonus;
+
+    printf("score = %u\\n", score);
+    printf("bonus = %u\\n", bonus);
+    printf("total = %u\\n", total);
+    return 0;
+}`,
+    inputs: [
+      { id: 'a', default: 200 },
+      { id: 'b', default: 100 }
+    ],
+    overflowLine: 7,
+    run(v) {
+      const a = ((BigInt(v.a) % 256n) + 256n) % 256n;
+      const b = ((BigInt(v.b) % 256n) + 256n) % 256n;
+      const raw = a + b;
+      const total = raw & 0xFFn;
+      const ov = raw > 255n;
+      return {
+        output: [
+          { cls: 'out', text: `score = ${a}` },
+          { cls: 'out', text: `bonus = ${b}` },
+          { cls: ov ? 'err' : 'out', text: `total = ${total}` },
+        ],
+        overflowed: ov,
+        verdict: ov
+          ? `<strong>Overflow.</strong> The variable <code>uint8_t total</code> can only hold values in [0, 255]. The expression <code>${a} + ${b}</code> evaluates to <em>${raw}</em>, which does not fit. The compiler stores the rightmost eight bits — <em>${total}</em> — and the program reports a final score smaller than either of its parts.`
+          : `No overflow. Both operands and their sum fit within the byte's [0, 255] range; the program prints a faithful total of <em>${total}</em>.`
+      };
+    }
+  },
+
+  {
+    id: 'loop',
+    name: 'The Loop',
+    blurb: 'A byte counter that misbehaves at the boundary — two ways.',
+    steps: [
+      {
+        label: 'STEP 1 · LOOP THAT NEVER ENDS',
+        file: 'loop_a.c',
+        code:
+`#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    uint8_t i;
+    int hits = 0;
+
+    for (i = 0; i < {{limit}}; i++) {
+        hits++;
+        if (hits > {{cap}}) {
+            printf("ABORTED: ran %d iterations.\\n", hits);
+            return 1;
+        }
+    }
+
+    printf("done. ran %d iterations.\\n", hits);
+    return 0;
+}`,
+        inputs: [
+          { id: 'limit', default: 300 },
+          { id: 'cap',   default: 1000 }
+        ],
+        overflowLine: 8,
+        run(v) {
+          const limit = BigInt(v.limit);
+          const cap   = BigInt(v.cap);
+          let hits = 0n;
+          let i = 0n;
+          let aborted = false;
+          while (i < limit) {
+            hits++;
+            if (hits > cap) { aborted = true; break; }
+            i = (i + 1n) & 0xFFn;
+            if (hits > 200000n) { aborted = true; break; }
+          }
+          const wraps = limit > 255n;
+          return {
+            output: aborted
+              ? [{ cls: 'err', text: `ABORTED: ran ${hits} iterations.` }]
+              : [{ cls: 'out', text: `done. ran ${hits} iterations.` }],
+            overflowed: wraps,
+            exit: aborted ? 1 : 0,
+            verdict: wraps
+              ? `<strong>Step 1 — Infinite loop by truncation.</strong> The condition <code>i &lt; ${limit}</code> compares a <code>uint8_t</code> (max 255) against ${limit}. The byte counter wraps to 0 after 255 — it never reaches ${limit}. Without the safety cap of ${cap}, this program would run forever. Now switch to <strong>Step 2</strong> to see the inverse: a loop that <em>terminates</em> for the same reason this one doesn't.`
+              : `Step 1 completed normally. Because ${limit} ≤ 255, the byte never wraps before the loop ends.`
+          };
+        }
+      },
+      {
+        label: 'STEP 2 · LOOP THAT QUIETLY STOPS',
+        file: 'loop_b.c',
+        code:
+`#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    uint8_t i;
+    int hits = 0;
+
+    for (i = {{start}}; i != 0; i++) {
+        hits++;
+    }
+
+    printf("loop ended after %d iterations.\\n", hits);
+    printf("final i = %u\\n", i);
+    return 0;
+}`,
+        inputs: [
+          { id: 'start', default: 1 }
+        ],
+        overflowLine: 8,
+        run(v) {
+          const raw = BigInt(v.start);
+          const start = ((raw % 256n) + 256n) % 256n;
+          if (start === 0n) {
+            return {
+              output: [
+                { cls: 'out', text: `loop ended after 0 iterations.` },
+                { cls: 'out', text: `final i = 0` }
+              ],
+              overflowed: false,
+              verdict: `Loop never entered — <code>i != 0</code> was false from the start. Try any value in 1..255 to see the wrap-stop.`
+            };
+          }
+          const hits = 256n - start;
+          return {
+            output: [
+              { cls: 'out', text: `loop ended after ${hits} iterations.` },
+              { cls: 'out', text: `final i = 0` }
+            ],
+            overflowed: true,
+            verdict: `<strong>Step 2 — Loop terminates by integer overflow.</strong> Starting at <code>i = ${start}</code>, the byte counter goes ${start}, ${start + 1n}, …, 255 — then <code>i++</code> wraps it to <em>0</em>. The condition <code>i != 0</code> immediately becomes false and the loop exits after <em>${hits}</em> iterations. The very same byte wrap that prevented Step 1 from finishing causes Step 2 to finish; the cage is the same — only the role of zero changed.`
+          };
+        }
+      }
+    ]
+  },
+
+  {
+    id: 'index',
+    name: 'The Index',
+    blurb: 'A bounds check, sidestepped.',
+    file: 'index.c',
+    code:
+`#include <stdio.h>
+#include <stdint.h>
+
+#define LIMIT 8
+
+int main(void) {
+    int data[LIMIT] = {100, 200, 300, 400, 500, 600, 700, 800};
+    int8_t i = {{idx}};   /* attacker-supplied — declared int8_t */
+
+    /* upper-bound 'safety' check */
+    if (i < LIMIT) {
+        printf("i (after int8_t cast) = %d\\n", i);
+        printf("data[%d] = %d\\n", i, data[i]);
+    } else {
+        printf("rejected: %d >= LIMIT (%d)\\n", i, LIMIT);
+    }
+    return 0;
+}`,
+    inputs: [
+      { id: 'idx', default: 200 }
+    ],
+    overflowLine: 7,
+    run(v) {
+      const LIMIT = 8;
+      const idx = BigInt(v.idx);
+      // cast to int8_t
+      const u8 = ((idx % 256n) + 256n) % 256n;
+      const s8 = u8 >= 128n ? u8 - 256n : u8;
+      const truncated = idx !== s8;
+      const data = [100, 200, 300, 400, 500, 600, 700, 800];
+
+      const lines = [];
+      let exploited = false;
+      let rejected = false;
+
+      if (s8 < BigInt(LIMIT)) {
+        // bounds check passes
+        const idxNum = Number(s8);
+        lines.push({ cls: 'out', text: `i (after int8_t cast) = ${s8}` });
+        if (idxNum >= 0 && idxNum < LIMIT) {
+          lines.push({ cls: 'out', text: `data[${idxNum}] = ${data[idxNum]}` });
+        } else {
+          // out of bounds — simulate adjacent stack memory
+          exploited = true;
+          // deterministic-but-spooky byte pattern, derived from index for reproducibility
+          const seed = ((Number(s8) * 0x9E3779B1) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+          lines.push({ cls: 'err', text: `data[${idxNum}] = 0x${seed}    *** OUT-OF-BOUNDS READ ***` });
+          lines.push({ cls: 'err', text: `[asan] stack-buffer-${idxNum < 0 ? 'underflow' : 'overflow'} at offset ${idxNum * 4}` });
+        }
+      } else {
+        rejected = true;
+        lines.push({ cls: 'out', text: `rejected: ${s8} >= LIMIT (${LIMIT})` });
+      }
+
+      return {
+        output: lines,
+        overflowed: truncated || exploited,
+        verdict: (truncated && exploited)
+          ? `<strong>Bounds check bypass via truncation.</strong> The user supplied <em>${idx}</em>, but the variable <code>i</code> is declared <code>int8_t</code> — only [−128, 127]. The value is silently truncated to <em>${s8}</em>. The "safety" check <code>if (i &lt; LIMIT)</code> compares <em>${s8} &lt; ${LIMIT}</em> and passes. The program then reads <code>data[${s8}]</code> — memory <em>before</em> the array begins. This is the canonical CVE pattern: an index that has already overflowed before the bounds check sees it.`
+          : (exploited)
+          ? `<strong>Out-of-bounds access.</strong> The value <em>${s8}</em> passed the upper-bound check but is ${Number(s8) < 0 ? 'negative — pointing into memory before the array' : 'beyond the array'}. C performs no run-time bounds check on indexing, so the read proceeds into adjacent memory. On a real stack this might be a saved register, a return address, or another local variable.`
+          : (truncated && rejected)
+          ? `Truncation occurred: <em>${idx}</em> became <em>${s8}</em>. The bounds check happened to reject this value, but only because the truncated number landed above LIMIT. Validate the <em>original</em> input — by the time it reaches <code>i</code>, information has already been lost.`
+          : `Normal access. The value <em>${s8}</em> is a valid index in [0, ${LIMIT - 1}]; the bounds check correctly admits it.`
+      };
+    }
+  },
+
+  {
+    id: 'allocator',
+    name: 'The Allocator',
+    blurb: 'A multiplication that fits — but doesn’t.',
+    file: 'alloc.c',
+    code:
+`#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+int main(void) {
+    uint16_t count    = {{count}};
+    uint16_t per_item = {{per}};
+
+    /* size used to allocate */
+    uint16_t bytes = count * per_item;
+    char *buf = malloc(bytes);
+    printf("malloc(%u) returned %p\\n", bytes, (void*)buf);
+
+    /* attacker-controlled fields, original intent */
+    int actual_write = (int)count * (int)per_item;
+    printf("intend to write %d bytes\\n", actual_write);
+
+    if (actual_write > bytes) {
+        printf(">>> heap overflow: %d bytes into a %u-byte buffer <<<\\n",
+               actual_write, bytes);
+    }
+    free(buf);
+    return 0;
+}`,
+    inputs: [
+      { id: 'count', default: 1024 },
+      { id: 'per',   default: 64 }
+    ],
+    overflowLine: 9,
+    run(v) {
+      const count = BigInt(v.count) & 0xFFFFn;
+      const per   = BigInt(v.per)   & 0xFFFFn;
+      const raw = count * per;
+      const bytes = raw & 0xFFFFn;
+      const actual = Number(count) * Number(per);
+      const ov = raw > 0xFFFFn;
+      const heap = ov ? '0x55c1de00' : '0x55c1da30';
+      const lines = [
+        { cls: 'out', text: `malloc(${bytes}) returned ${heap}` },
+        { cls: 'out', text: `intend to write ${actual} bytes` },
+      ];
+      if (actual > Number(bytes)) {
+        lines.push({ cls: 'err', text: `>>> heap overflow: ${actual} bytes into a ${bytes}-byte buffer <<<` });
+      }
+      return {
+        output: lines,
+        overflowed: ov,
+        verdict: ov
+          ? `<strong>Allocator wraparound.</strong> The buffer is sized as <code>uint16_t bytes = count * per_item</code>: <em>${count} × ${per} = ${raw}</em>, but the byte count truncates to <em>${bytes}</em>. The program then writes <em>${actual}</em> bytes into a buffer of <em>${bytes}</em> bytes — the canonical integer‑overflow heap corruption pattern catalogued in countless CVEs.`
+          : `No overflow. <code>${count} × ${per} = ${raw}</code> fits in a 16‑bit unsigned integer; the buffer matches the intent.`
+      };
+    }
+  },
+
+  {
+    id: 'convert',
+    name: 'The Conversion',
+    blurb: 'A signed bounds check that an unsigned cast walks straight through.',
+    file: 'convert.c',
+    code:
+`#include <stdio.h>
+#include <string.h>
+
+#define BUFFER_SIZE 64
+
+void copy_packet(int len, const char *data) {
+    char buf[BUFFER_SIZE];
+
+    /* "safety" check — signed comparison */
+    if (len < BUFFER_SIZE) {
+        memcpy(buf, data, len);   /* memcpy takes size_t */
+        printf("copied %d bytes\\n", len);
+    } else {
+        printf("rejected: len=%d too large\\n", len);
+    }
+}
+
+int main(void) {
+    int len = {{len}};            /* attacker-controlled */
+    copy_packet(len, "hello world payload");
+    return 0;
+}`,
+    inputs: [
+      { id: 'len', default: -1 }
+    ],
+    overflowLine: 10,
+    run(v) {
+      const BUFFER_SIZE = 64n;
+      const len = BigInt(v.len);
+      const passes = len < BUFFER_SIZE;   // signed comparison
+
+      if (!passes) {
+        return {
+          output: [
+            { cls: 'out', text: `rejected: len=${len} too large` }
+          ],
+          overflowed: false,
+          verdict: `Rejected. The signed comparison saw <code>${len} &gt;= ${BUFFER_SIZE}</code> and refused. The check works on the upper side — but only the upper side.`
+        };
+      }
+
+      if (len >= 0n) {
+        return {
+          output: [
+            { cls: 'out', text: `copied ${len} bytes` }
+          ],
+          overflowed: false,
+          verdict: `Normal case. The value <code>${len}</code> is non‑negative and below <code>BUFFER_SIZE</code>; <code>memcpy</code> copies exactly ${len} byte${len === 1n ? '' : 's'} into the buffer. This is what the author intended.`
+        };
+      }
+
+      // len is negative, signed check passed; memcpy converts to size_t (64-bit unsigned)
+      const M = 1n << 64n;
+      const sizeT = ((len % M) + M) % M;
+      return {
+        output: [
+          { cls: 'err', text: `*** memcpy(buf, data, ${sizeT}) ***` },
+          { cls: 'err', text: `[asan] stack-buffer-overflow: write of ${sizeT} bytes into a 64-byte stack buffer` }
+        ],
+        overflowed: true,
+        verdict: `<strong>Signed-to-unsigned conversion bypass.</strong> The signed comparison <code>len &lt; BUFFER_SIZE</code> evaluates as <em>${len} &lt; ${BUFFER_SIZE}</em> — true — and the check happily passes. But <code>memcpy</code>'s third argument is a <code>size_t</code> (unsigned). The negative <em>${len}</em> is implicitly converted to a huge positive — <em>${sizeT}</em> bytes — and the program tries to write that many bytes into a 64‑byte stack buffer. This is <em>CWE‑195</em> (Signed to Unsigned Conversion Error); a long line of CVEs in <code>memcpy</code>, <code>memset</code>, <code>read</code>, and friends descends from exactly this shape.`
+      };
+    }
+  },
+
+  {
+    id: 'packet',
+    name: 'The Packet',
+    blurb: 'OpenSSH CVE‑2002‑0639 — remote code execution via challenge count.',
+    file: 'sshd_challenge.c',
+    code:
+`#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+/* simplified pattern from CVE-2002-0639
+ * (OpenSSH 2.x / 3.x challenge-response remote code execution) */
+int main(void) {
+    /* number of responses, attacker-controlled in the SSH packet */
+    uint16_t count = {{count}};
+
+    /* allocate space for "count" 8-byte response pointers */
+    uint16_t bytes = count * 8;          /* uint16_t multiply — can wrap */
+    char *buf = malloc(bytes ? bytes : 1);
+    printf("malloc(%u) for %u responses\\n", bytes, count);
+
+    /* server now reads count × 8 bytes from the network into buf */
+    unsigned long real = (unsigned long)count * 8;
+    printf("server reads %lu bytes from network\\n", real);
+
+    if (real > bytes) {
+        printf(">>> HEAP OVERFLOW: write %lu bytes into a %u-byte chunk <<<\\n",
+               real, bytes);
+        printf(">>> CVE-2002-0639 — remote code execution on OpenSSH <<<\\n");
+    }
+    free(buf);
+    return 0;
+}`,
+    inputs: [
+      { id: 'count', default: 8200 }
+    ],
+    overflowLine: 11,
+    run(v) {
+      const count = ((BigInt(v.count) % 65536n) + 65536n) % 65536n;
+      const bytesRaw = count * 8n;
+      const bytes = bytesRaw & 0xFFFFn;
+      const real = count * 8n;
+      const overflowed = real > bytes;
+      const lines = [
+        { cls: 'out', text: `malloc(${bytes}) for ${count} responses` },
+        { cls: 'out', text: `server reads ${real} bytes from network` }
+      ];
+      if (overflowed) {
+        lines.push({ cls: 'err', text: `>>> HEAP OVERFLOW: write ${real} bytes into a ${bytes}-byte chunk <<<` });
+        lines.push({ cls: 'err', text: `>>> CVE-2002-0639 — remote code execution on OpenSSH <<<` });
+      }
+      return {
+        output: lines,
+        overflowed,
+        verdict: overflowed
+          ? `<strong>OpenSSH CVE‑2002‑0639 — remote code execution.</strong> The allocation size is computed in <code>uint16_t</code>: <em>${count} × 8 = ${count * 8n}</em>, which truncates to <em>${bytes}</em>. <code>malloc</code> hands back a ${bytes}-byte chunk. The server then reads the full <em>${real}</em> bytes from the network, overrunning the chunk and corrupting heap metadata. In the original OpenSSH bug an attacker could overwrite a function-pointer in the chunk that followed; the next call jumped into shellcode the same packet had already supplied. Affected sshd on millions of servers; the patch widened the type and added a checked allocator.`
+          : `No overflow with this count. Try <code>8200</code> or any value where <em>count × 8 ≥ 65 536</em>, the threshold at which the <code>uint16_t</code> wraps and the exploit triggers.`
+      };
+    }
+  }
+];
+
+let activeScenario = 0;
+
+/* ----- syntax highlighter for C ----- */
+function highlightC(s) {
+  s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    // multi-line comment
+    if (s.startsWith('/*', i)) {
+      const end = s.indexOf('*/', i + 2);
+      const close = end === -1 ? s.length : end + 2;
+      out.push(`<span class="com">${s.slice(i, close)}</span>`);
+      i = close;
+      continue;
+    }
+    // line comment
+    if (s.startsWith('//', i)) {
+      const end = s.indexOf('\n', i);
+      const close = end === -1 ? s.length : end;
+      out.push(`<span class="com">${s.slice(i, close)}</span>`);
+      i = close;
+      continue;
+    }
+    // preprocessor (start of line)
+    if (s[i] === '#' && (i === 0 || s[i-1] === '\n')) {
+      const end = s.indexOf('\n', i);
+      const close = end === -1 ? s.length : end;
+      out.push(`<span class="pp">${s.slice(i, close)}</span>`);
+      i = close;
+      continue;
+    }
+    // string literal
+    if (s[i] === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === '\\') j++;
+        j++;
+      }
+      out.push(`<span class="str">${s.slice(i, j + 1)}</span>`);
+      i = j + 1;
+      continue;
+    }
+    // identifier
+    if (/[A-Za-z_]/.test(s[i])) {
+      let j = i;
+      while (j < s.length && /[A-Za-z0-9_]/.test(s[j])) j++;
+      const word = s.slice(i, j);
+      const types = ['int8_t','uint8_t','int16_t','uint16_t','int32_t','uint32_t','int64_t','uint64_t','size_t','time_t','time_t_legacy','char','short','int','long','unsigned','signed','void'];
+      const kws = ['if','else','for','while','return','do','break','continue','switch','case','default','typedef','struct','static','const','sizeof'];
+      const fns = ['printf','malloc','free','main'];
+      if (types.includes(word))      out.push(`<span class="ty">${word}</span>`);
+      else if (kws.includes(word))   out.push(`<span class="kw">${word}</span>`);
+      else if (fns.includes(word))   out.push(`<span class="fn">${word}</span>`);
+      else                            out.push(word);
+      i = j;
+      continue;
+    }
+    // number
+    if (/[0-9]/.test(s[i])) {
+      let j = i;
+      while (j < s.length && /[0-9xXa-fA-F]/.test(s[j])) j++;
+      out.push(`<span class="num">${s.slice(i, j)}</span>`);
+      i = j;
+      continue;
+    }
+    // misc
+    out.push(s[i]);
+    i++;
+  }
+  return out.join('');
+}
+
+/* If a scenario has a `steps` array, the active step's data
+   replaces top-level fields (file, code, inputs, run, overflowLine). */
+const stepByScenario = {};
+function getActiveData(scIdx) {
+  const sc = scenarios[scIdx];
+  if (sc.steps && sc.steps.length) {
+    const stepIdx = stepByScenario[sc.id] || 0;
+    const step = sc.steps[stepIdx];
+    return {
+      scenario: sc, hasSteps: true, stepIdx,
+      file: step.file, code: step.code,
+      inputs: step.inputs, run: step.run,
+      overflowLine: step.overflowLine
+    };
+  }
+  return {
+    scenario: sc, hasSteps: false, stepIdx: 0,
+    file: sc.file, code: sc.code,
+    inputs: sc.inputs, run: sc.run,
+    overflowLine: sc.overflowLine
+  };
+}
+
+function renderScenario(scIdx) {
+  const data = getActiveData(scIdx);
+  const sc = data.scenario;
+
+  // step tabs above the code (only rendered if scenario has steps)
+  const stepsEl = document.getElementById('sc-steps');
+  stepsEl.innerHTML = '';
+  if (data.hasSteps) {
+    sc.steps.forEach((step, i) => {
+      const b = document.createElement('button');
+      b.className = 'step-tab' + (i === data.stepIdx ? ' active' : '');
+      b.textContent = step.label;
+      b.addEventListener('click', () => {
+        stepByScenario[sc.id] = i;
+        renderScenario(scIdx);
+      });
+      stepsEl.appendChild(b);
+    });
+  }
+
+  document.getElementById('sc-info-name').textContent = sc.name;
+  document.getElementById('sc-tty').textContent = `tty · ./${data.file.replace(/\.c$/, '')}`;
+  document.getElementById('sc-output').innerHTML =
+    `<span class="meta">// ready — press <b style="color:#FFB060">compile &amp; run</b> to execute <b>${data.file}</b>.</span>`;
+  document.getElementById('sc-verdict').innerHTML =
+    `Press <em>compile &amp; run</em> and the program will execute. The verdict appears here, explaining whether the cage held — and if it did not, where the silent corruption was injected.`;
+  document.getElementById('run-alarm').classList.remove('on');
+
+  // split code by {{...}} placeholders
+  const parts = data.code.split(/(\{\{\w+\}\})/);
+  const segments = parts.map(part => {
+    const m = part.match(/^\{\{(\w+)\}\}$/);
+    if (m) {
+      const id = m[1];
+      const inp = data.inputs.find(x => x.id === id);
+      const w = String(inp.default).length > 6 ? ' wide' : '';
+      return `<input class="inline-input${w}" type="text" data-input-id="${id}" value="${inp.default}" />`;
+    }
+    return highlightC(part);
+  });
+  const fullHtml = segments.join('');
+  const lines = fullHtml.split('\n');
+  const lineHtml = lines.map((l, idx) =>
+    `<span class="line" data-line="${idx + 1}"><span class="ln">${idx + 1}</span>${l || ' '}</span>`
+  ).join('\n');
+  document.getElementById('sc-code').innerHTML = lineHtml;
+}
+
+function buildScenarioTabs() {
+  const wrap = document.getElementById('sc-tabs');
+  wrap.innerHTML = '';
+  scenarios.forEach((sc, idx) => {
+    const b = document.createElement('button');
+    b.className = 'scenario-tab' + (idx === activeScenario ? ' active' : '');
+    b.innerHTML = `
+      <span class="lab">EX. 0${idx + 1}</span>
+      <span class="ti">${sc.name.replace(/(\w+)$/, '<em>$1</em>')}</span>
+      <span class="blurb">${sc.blurb}</span>`;
+    b.addEventListener('click', () => {
+      activeScenario = idx;
+      document.querySelectorAll('.scenario-tab').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      renderScenario(idx);
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function collectInputs() {
+  const data = getActiveData(activeScenario);
+  const v = {};
+  data.inputs.forEach(inp => {
+    const el = document.querySelector(`#sc-code [data-input-id="${inp.id}"]`);
+    let raw = el ? el.value.trim() : String(inp.default);
+    let n;
+    try {
+      // permissive parse, like elsewhere
+      raw = raw.replace(/_/g, '').replace(/[\s,]/g, '');
+      if (/^-?0x/i.test(raw)) {
+        const sign = raw.startsWith('-') ? -1n : 1n;
+        n = sign * BigInt(raw.replace(/^-?0x/i, '0x'));
+      } else if (/^-?0b/i.test(raw)) {
+        const sign = raw.startsWith('-') ? -1n : 1n;
+        n = sign * BigInt('0b' + raw.replace(/^-?0b/i, ''));
+      } else {
+        n = BigInt(raw);
+      }
+    } catch (e) {
+      n = BigInt(inp.default);
+    }
+    v[inp.id] = n;
+  });
+  return v;
+}
+
+function appendTermLine(termEl, cls, text) {
+  return new Promise(resolve => {
+    const span = document.createElement('span');
+    span.className = cls;
+    termEl.appendChild(span);
+    let i = 0;
+    const speed = text.length > 60 ? 3 : (text.length > 20 ? 6 : 9);
+    function tick() {
+      if (i >= text.length) {
+        termEl.scrollTop = termEl.scrollHeight;
+        return resolve();
+      }
+      span.textContent += text[i++];
+      termEl.scrollTop = termEl.scrollHeight;
+      setTimeout(tick, speed);
+    }
+    tick();
+  });
+}
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runScenarioAsync() {
+  const data = getActiveData(activeScenario);
+  const runBtn = document.getElementById('sc-run');
+  runBtn.disabled = true;
+  runBtn.textContent = 'running…';
+
+  const term = document.getElementById('sc-output');
+  term.innerHTML = '';
+
+  await appendTermLine(term, 'prompt', `$ gcc -Wall -O2 ${data.file} -o ${data.file.replace(/\.c$/, '')}`);
+  await delay(220);
+  await appendTermLine(term, 'meta', `// compiled with no warnings (overflow is silent in C).`);
+  await delay(180);
+  await appendTermLine(term, 'prompt', `$ ./${data.file.replace(/\.c$/, '')}`);
+  await delay(260);
+
+  let result;
+  try {
+    const inputs = collectInputs();
+    result = data.run(inputs);
+  } catch (err) {
+    await appendTermLine(term, 'err', `[runtime error] ${err.message}`);
+    runBtn.disabled = false;
+    runBtn.innerHTML = 'compile &amp; run';
+    return;
+  }
+
+  for (const line of result.output) {
+    await appendTermLine(term, line.cls, line.text);
+    await delay(60);
+  }
+  await delay(150);
+  const exitCode = result.exit !== undefined ? result.exit : 0;
+  const exitMsg = result.overflowed
+    ? `// process exited ${exitCode} — but values were silently corrupted.`
+    : `// process exited ${exitCode}.`;
+  await appendTermLine(term, 'meta', exitMsg);
+
+  // verdict
+  document.getElementById('sc-verdict').innerHTML = result.verdict;
+
+  // highlight overflow line
+  document.querySelectorAll('#sc-code .line').forEach(l => l.classList.remove('hl-overflow'));
+  if (result.overflowed && data.overflowLine) {
+    const line = document.querySelector(`#sc-code .line[data-line="${data.overflowLine}"]`);
+    if (line) line.classList.add('hl-overflow');
+  }
+
+  document.getElementById('run-alarm').classList.toggle('on', !!result.overflowed);
+
+  runBtn.disabled = false;
+  runBtn.innerHTML = 'compile &amp; run';
+}
+
+document.getElementById('sc-run').addEventListener('click', runScenarioAsync);
+document.getElementById('sc-reset').addEventListener('click', () => {
+  renderScenario(activeScenario);
+});
+
+buildScenarioTabs();
+renderScenario(0);
+
+
+/* ============================================================
+   SECTION VII — ANTIVENOMS (remedy renderer)
+
+   Each remedy declares the FULL vulnerable program and the FULL
+   patched program. Diff markers — `[[D]]…[[/D]]` for token‑level
+   removal, `[[A]]…[[/A]]` for token‑level addition, and
+   `[[LA]]…[[/LA]]` / `[[LD]]…[[/LD]]` for whole‑line additions/
+   removals — are stripped through highlightC() (which doesn't
+   know about them and emits them as plain text), then post‑
+   replaced with the proper diff‑highlight spans.
+   ============================================================ */
+
+const remediesData = [
+  {
+    id: 'counter', file: 'counter.c',
+    vuln: `#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    uint8_t score = 200;
+    uint8_t bonus = 100;
+    [[D]]uint8_t[[/D]] total = score + bonus;
+
+    printf("score = %u\\n", score);
+    printf("bonus = %u\\n", bonus);
+    printf("total = %u\\n", total);
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    uint8_t score = 200;
+    uint8_t bonus = 100;
+    [[A]]uint16_t[[/A]] total = [[A]](uint16_t)[[/A]]score + bonus;
+
+    printf("score = %u\\n", score);
+    printf("bonus = %u\\n", bonus);
+    printf("total = %u\\n", total);
+    return 0;
+}`
+  },
+
+  {
+    id: 'loop', file: 'loop.c',
+    vuln: `#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    [[D]]uint8_t[[/D]] i;
+    int hits = 0;
+
+    for (i = 0; i < 300; i++) {
+        hits++;
+[[LD]]        if (hits > 1000) {[[/LD]]
+[[LD]]            printf("ABORTED: ran %d.\\n", hits);[[/LD]]
+[[LD]]            return 1;[[/LD]]
+[[LD]]        }[[/LD]]
+    }
+
+    printf("done. ran %d iterations.\\n", hits);
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    int limit = 300;
+    int hits = 0;
+
+[[LA]]    /* PRE-CONDITION: the loop bound must fit in the counter's range. */[[/LA]]
+[[LA]]    /* uint8_t holds [0, 255]; any larger limit can never be reached.  */[[/LA]]
+[[LA]]    if (limit < 0 || limit > UINT8_MAX) return -1;[[/LA]]
+
+    for ([[A]]uint8_t[[/A]] i = 0; i < limit; i++) {
+        hits++;
+    }
+
+    printf("done. ran %d iterations.\\n", hits);
+    return 0;
+}`
+  },
+
+  {
+    id: 'index', file: 'index.c',
+    vuln: `#include <stdio.h>
+#include <stdint.h>
+
+#define LIMIT 8
+
+int main(void) {
+    int data[LIMIT] = {100, 200, 300, 400,
+                       500, 600, 700, 800};
+    [[D]]int8_t[[/D]] i = 200;     /* attacker-supplied */
+
+    /* upper-bound check only — incomplete! */
+    if ([[D]]i < LIMIT[[/D]]) {
+        printf("data[%d] = %d\\n", i, data[i]);
+    } else {
+        printf("rejected: %d >= LIMIT\\n", i);
+    }
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+
+#define LIMIT 8
+
+int main(void) {
+    int data[LIMIT] = {100, 200, 300, 400,
+                       500, 600, 700, 800};
+    [[A]]int[[/A]] raw = 200;      /* keep full width */
+
+[[LA]]    /* PRE-CONDITION: validate the wide value before narrowing.       */[[/LA]]
+[[LA]]    /* The check sees the original input, not the truncated residue.  */[[/LA]]
+[[LA]]    if (raw < 0 || raw >= LIMIT) {[[/LA]]
+[[LA]]        printf("rejected: %d out of bounds\\n", raw);[[/LA]]
+[[LA]]        return 1;[[/LA]]
+[[LA]]    }[[/LA]]
+[[LA]]    size_t i = (size_t)raw;[[/LA]]
+
+    printf("data[%zu] = %d\\n", i, data[i]);
+    return 0;
+}`
+  },
+
+  {
+    id: 'allocator', file: 'alloc.c',
+    vuln: `#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+int main(void) {
+    uint16_t count    = 1024;
+    uint16_t per_item = 64;
+
+    [[D]]uint16_t bytes = count * per_item;[[/D]]
+    char *buf = malloc(bytes);
+    printf("malloc(%u) -> %p\\n", bytes, (void*)buf);
+
+    int actual = (int)count * (int)per_item;
+    if (actual > bytes) {
+        printf(">>> overflow: %d into %u <<<\\n",
+               actual, bytes);
+    }
+    free(buf);
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <stddef.h>
+#include <stdlib.h>
+
+int main(void) {
+    [[A]]size_t[[/A]] count    = 1024;
+    [[A]]size_t[[/A]] per_item = 64;
+
+[[LA]]    /* POST-CHECK: calloc multiplies count*per_item internally and    */[[/LA]]
+[[LA]]    /* returns NULL when the size overflows, so we test the result.   */[[/LA]]
+[[LA]]    char *buf = calloc(count, per_item);[[/LA]]
+[[LA]]    if (!buf) {[[/LA]]
+[[LA]]        fprintf(stderr, "refused: overflow or OOM\\n");[[/LA]]
+[[LA]]        return 1;[[/LA]]
+[[LA]]    }[[/LA]]
+
+    size_t bytes = count * per_item;
+    printf("calloc(%zu, %zu) -> %p\\n",
+           count, per_item, (void*)buf);
+    printf("ready to write %zu bytes safely\\n", bytes);
+
+    free(buf);
+    return 0;
+}`
+  },
+
+  {
+    id: 'convert', file: 'convert.c',
+    vuln: `#include <stdio.h>
+#include <string.h>
+
+#define BUFFER_SIZE 64
+
+void copy_packet(int len, const char *data) {
+    char buf[BUFFER_SIZE];
+
+    /* "safety" check — signed comparison */
+    [[D]]if (len < BUFFER_SIZE) {[[/D]]
+        memcpy(buf, data, len);   /* memcpy takes size_t */
+        printf("copied %d bytes\\n", len);
+    } else {
+        printf("rejected: len=%d too large\\n", len);
+    }
+}
+
+int main(void) {
+    int len = -1;            /* attacker-controlled */
+    copy_packet(len, "hello world payload");
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <string.h>
+
+#define BUFFER_SIZE 64
+
+void copy_packet(int len, const char *data) {
+    char buf[BUFFER_SIZE];
+
+[[LA]]    /* PRE-CONDITION: validate BOTH bounds on the signed input.    */[[/LA]]
+[[LA]]    /* Catch negative values BEFORE the implicit cast to size_t.   */[[/LA]]
+[[LA]]    if (len < 0 || (size_t)len > sizeof(buf)) {[[/LA]]
+[[LA]]        printf("rejected: len=%d out of range\\n", len);[[/LA]]
+[[LA]]        return;[[/LA]]
+[[LA]]    }[[/LA]]
+    memcpy(buf, data, (size_t)len);
+    printf("copied %d bytes\\n", len);
+}
+
+int main(void) {
+    int len = -1;
+    copy_packet(len, "hello world payload");
+    return 0;
+}`
+  },
+
+  {
+    id: 'packet', file: 'sshd_challenge.c',
+    vuln: `#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+int main(void) {
+    uint16_t count = 8200;
+
+    /* allocate count * 8 bytes — uint16_t multiply may wrap */
+    [[D]]uint16_t bytes = count * 8;[[/D]]
+    char *buf = malloc(bytes ? bytes : 1);
+
+    unsigned long real = (unsigned long)count * 8;
+    if (real > bytes) {
+        printf(">>> HEAP OVERFLOW: %lu into %u <<<\\n", real, bytes);
+    }
+    free(buf);
+    return 0;
+}`,
+    safe: `#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+
+int main(void) {
+    [[A]]size_t[[/A]] count = 8200;
+
+[[LA]]    /* POST-CHECK: calloc multiplies count*8 internally and returns  */[[/LA]]
+[[LA]]    /* NULL when the size_t multiplication overflows — so the bug    */[[/LA]]
+[[LA]]    /* surfaces as a benign allocation failure instead of corruption.*/[[/LA]]
+[[LA]]    char *buf = calloc(count, 8);[[/LA]]
+[[LA]]    if (!buf) {[[/LA]]
+[[LA]]        fprintf(stderr, "refused: allocation overflow or OOM\\n");[[/LA]]
+[[LA]]        return 1;[[/LA]]
+[[LA]]    }[[/LA]]
+
+    size_t bytes = count * 8;   /* now safe — calloc has validated */
+    printf("calloc(%zu, 8) = %p, %zu bytes ready\\n",
+           count, (void*)buf, bytes);
+
+    free(buf);
+    return 0;
+}`
+  }
+];
+
+function applyDiffMarkers(html) {
+  // The markers passed through highlightC as plain text and were HTML-escaped,
+  // turning the literal string `[[D]]` into the same `[[D]]` (no special chars
+  // inside). Replace each marker with its corresponding span.
+  return html
+    .replace(/\[\[LA\]\]/g, '<span class="line-add">')
+    .replace(/\[\[\/LA\]\]/g, '</span>')
+    .replace(/\[\[LD\]\]/g, '<span class="line-del">')
+    .replace(/\[\[\/LD\]\]/g, '</span>')
+    .replace(/\[\[D\]\]/g, '<span class="diff-del">')
+    .replace(/\[\[\/D\]\]/g, '</span>')
+    .replace(/\[\[A\]\]/g, '<span class="diff-add">')
+    .replace(/\[\[\/A\]\]/g, '</span>');
+}
+
+function renderRemedies() {
+  remediesData.forEach(r => {
+    const article = document.getElementById('rem-' + r.id);
+    if (!article) return;
+    const vulnPre = article.querySelector('.rem-code.vuln pre');
+    const safePre = article.querySelector('.rem-code.safe pre');
+    const vulnTag = article.querySelector('.rem-code.vuln .rem-tag');
+    const safeTag = article.querySelector('.rem-code.safe .rem-tag');
+    if (vulnTag) vulnTag.innerHTML = `VULNERABLE · <b style="color:#FF8870">${r.file}</b>`;
+    if (safeTag) safeTag.innerHTML = `PATCHED · <b style="color:#97D77F">${r.file}</b>`;
+    if (vulnPre) vulnPre.innerHTML = applyDiffMarkers(highlightC(r.vuln));
+    if (safePre) safePre.innerHTML = applyDiffMarkers(highlightC(r.safe));
+  });
+}
+
+renderRemedies();
+
+
+/* ============================================================
+   SCROLL REVEALS
+
+   Each `.reveal` element animates in when it enters the viewport.
+   To guarantee visibility even if the observer never fires for an
+   element (tall grids, slow scroll, edge cases), we eagerly add
+   `.in` to every reveal element after a short delay regardless of
+   intersection state — the `.in` class already short-circuits the
+   opacity-0 default in CSS.
+   ============================================================ */
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('in');
+  });
+}, { threshold: 0, rootMargin: '0px 0px -60px 0px' });
+const reveals = document.querySelectorAll('.reveal');
+reveals.forEach(el => io.observe(el));
+// Safety net: ensure every reveal becomes visible within ~1.5 s of load,
+// even if the observer hasn't fired (off-screen, lazy layout, etc.).
+setTimeout(() => reveals.forEach(el => el.classList.add('in')), 1500);
+
+</script>
+</body>
+</html>

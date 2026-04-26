@@ -1,8 +1,42 @@
-# Prompt Injection Lab
+# Secure Programming (Syber) — Lab
 
-**[Open the live project](https://bergerzvika.github.io/Prompt-Injection/)**
+**[Open the live project](https://bergerzvika.github.io/Syber-Lab/)**
 
-An interactive single-page reference covering prompt injection attack techniques and defenses, built as a standalone HTML file — no server or dependencies required.
+An interactive collection of single-page security labs. Each lab is a self-contained HTML file — no build step, no server, no dependencies beyond Google Fonts.
+
+## Labs
+
+| # | Lab | What it covers | File |
+|---|---|---|---|
+| 01 | **Integer Overflow** | bit storage, signed vs unsigned, wraparound, safe vs unsafe operators, real-world incidents, live C programs you can run, paired secure fixes | [`integer-overflow.html`](integer-overflow.html) |
+| 02 | **Prompt Injection** | direct and indirect prompt-injection attacks against LLM apps (instruction override, DAN, indirect via hidden HTML), with mitigations | [`prompt-injection.html`](prompt-injection.html) |
+
+The hub page at [`index.html`](index.html) lets you choose between labs.
+
+---
+
+## Lab 01 — Integer Overflow
+
+A seven-chapter interactive walkthrough of fixed-width integer arithmetic — what happens when an arithmetic result no longer fits in the bits a program reserved for it.
+
+Chapters:
+1. **Storage** — how a number fits in fixed bits (with a Cage Gauge for 8/16/32/64-bit ranges)
+2. **Signed vs Unsigned** — Twin Interpreters: the same bits read two ways
+3. **Wraparound** — Add/Sub Calculator with side-by-side decimal/binary
+4. **Operators** — four interactive demos covering `=`, arithmetic, bitwise/shift, and compare
+5. **Real-World Bugs** — six historical incidents (Ariane 5, Y2038, Pac-Man kill screen, …) with source links
+6. **Live C Programs** — six C programs that overflow, runnable in the browser via a built-in C-like interpreter:
+   - The Counter (`uint8_t` add)
+   - The Loop (two steps: a loop that never ends, a loop that quietly stops)
+   - The Index (signed bounds-check bypass)
+   - The Allocator (`uint16_t` size multiplication)
+   - The Conversion (signed → `size_t` in `memcpy`)
+   - The Packet (OpenSSH CVE-2002-0639-style heap overflow)
+7. **Secure Fixes** — three strategies (PRE-CHECK, POST-CHECK, TYPE) plus a paired patch for every live program
+
+---
+
+## Lab 02 — Prompt Injection
 
 ## What is Prompt Injection?
 
@@ -98,7 +132,7 @@ Multimodal LLMs (GPT-4V, Claude, Gemini) can read text in images. Attackers hide
 
 ## Usage
 
-Open `index.html` in any modern browser, or visit the [live demo](https://bergerzvika.github.io/Prompt-Injection/).
+Open `index.html` in any modern browser, or visit the [live demo](https://bergerzvika.github.io/Syber-Lab/).
 
 ## Purpose
 
