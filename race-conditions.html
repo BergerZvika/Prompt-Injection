@@ -1,0 +1,3498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RACE CONDITIONS — A Manifesto in Two Threads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;700;800;900&family=Manrope:wght@200;300;400;500;600&family=Petrona:ital,wght@0,400;1,300;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  /* ============= TOKENS — brutalist constructivist palette ============= */
+  :root {
+    --void:      #0c0c10;
+    --void-2:    #15151b;
+    --panel:     #1d1d24;
+    --panel-2:   #28282f;
+    --steel:     #393942;
+    --steel-2:   #50505a;
+    --bone:      #f0eada;
+    --bone-dim:  #b8b3a4;
+    --bone-soft: #8a8678;
+    --muted:     #6b6b75;
+    --thread-a:  #ff2424;          /* signal red    */
+    --thread-a-d:#a01818;
+    --thread-a-x:#ff7474;
+    --thread-b:  #ffe600;          /* signal yellow */
+    --thread-b-d:#998800;
+    --thread-b-x:#fff15c;
+    --conflict:  #ff00aa;          /* magenta — collision   */
+    --safe:      #2bda82;          /* chartreuse — invariant kept */
+    --safe-d:    #1a8c54;
+    --accent:    #00b8d9;          /* cool — neutral highlight */
+    --line:      rgba(240,234,218,0.14);
+    --line-strong:rgba(240,234,218,0.32);
+
+    --display: 'Big Shoulders Display', 'Arial Black', sans-serif;
+    --body:    'Manrope', system-ui, sans-serif;
+    --serif:   'Petrona', Georgia, serif;
+    --mono:    'DM Mono', 'SF Mono', monospace;
+  }
+
+  body {
+    background: var(--void);
+    color: var(--bone);
+    font-family: var(--body);
+    font-weight: 300;
+    line-height: 1.6;
+    overflow-x: hidden;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* large diagonal stripe pattern in the background — constructivist energy */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse at 80% 0%, rgba(255,36,36,0.08) 0%, transparent 55%),
+      radial-gradient(ellipse at 20% 100%, rgba(255,230,0,0.05) 0%, transparent 55%),
+      linear-gradient(180deg, var(--void) 0%, var(--void-2) 100%);
+  }
+  /* faint diagonal hatch */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 12px,
+      rgba(240,234,218,0.018) 12px,
+      rgba(240,234,218,0.018) 13px
+    );
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 90%);
+  }
+
+  /* film grain overlay (subtle) */
+  .grain {
+    position: fixed; inset: 0; pointer-events: none; z-index: 998;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 32px; position: relative; }
+
+  /* ============= NAV ============= */
+  nav.top {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(10px);
+    background: rgba(12,12,16,0.78);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.top .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 32px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--bone-dim);
+  }
+  nav.top .brand {
+    display: flex; align-items: center; gap: 14px;
+    color: var(--bone);
+    font-weight: 500;
+  }
+  nav.top .brand .mark {
+    width: 22px; height: 22px;
+    background: var(--thread-a);
+    position: relative;
+    transform: rotate(45deg);
+  }
+  nav.top .brand .mark::after {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    background: var(--thread-b);
+  }
+  nav.top .links { display: flex; gap: 28px; }
+  nav.top a { color: var(--bone-dim); text-decoration: none; transition: color .15s; }
+  nav.top a:hover { color: var(--thread-a); }
+
+  /* ============= HERO ============= */
+  .hero {
+    padding: 60px 0 80px;
+    position: relative;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .vol {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--thread-a);
+    margin-bottom: 32px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .vol::before {
+    content: '';
+    width: 36px; height: 1px;
+    background: var(--thread-a);
+  }
+
+  h1.title {
+    font-family: var(--display);
+    font-size: clamp(78px, 12vw, 188px);
+    line-height: 0.86;
+    letter-spacing: -0.025em;
+    color: var(--bone);
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    position: relative;
+  }
+  h1.title em {
+    font-style: normal;
+    color: var(--thread-a);
+    /* offset shadow for brutalist 3D */
+    text-shadow:
+      4px 4px 0 var(--thread-a-d),
+      8px 8px 0 #4a0c0c,
+      12px 12px 0 #220606;
+  }
+  h1.title .vs {
+    color: var(--thread-b);
+    text-shadow:
+      4px 4px 0 var(--thread-b-d),
+      8px 8px 0 #4a4400,
+      12px 12px 0 #221f00;
+  }
+  h1.title .small {
+    display: block;
+    margin-top: 14px;
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 0.18em;
+    letter-spacing: 0;
+    color: var(--bone-dim);
+    text-transform: none;
+    text-shadow: none;
+  }
+
+  .lede {
+    font-family: var(--body);
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--bone-dim);
+    max-width: 560px;
+    margin-bottom: 36px;
+    font-weight: 300;
+  }
+  .lede em { color: var(--thread-a); font-style: italic; font-family: var(--serif); }
+  .lede strong { color: var(--bone); font-weight: 500; }
+
+  .panel-readout {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 2px solid var(--bone);
+    border-bottom: 2px solid var(--bone);
+    margin-bottom: 32px;
+    background: var(--panel);
+  }
+  .readout-cell {
+    padding: 18px 18px;
+    border-right: 1px solid var(--line);
+  }
+  .readout-cell:last-child { border-right: none; }
+  .readout-cell .k {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .readout-cell .v {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--bone);
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+  }
+  .readout-cell .v.a    { color: var(--thread-a); }
+  .readout-cell .v.b    { color: var(--thread-b); }
+  .readout-cell .v.crit { color: var(--conflict); }
+
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 22px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border: 2px solid;
+    cursor: pointer;
+    background: transparent;
+    transition: all .15s;
+    font-weight: 500;
+  }
+  .btn.solid { background: var(--thread-a); color: var(--void); border-color: var(--thread-a); }
+  .btn.solid:hover {
+    background: var(--bone); border-color: var(--bone);
+    box-shadow: 6px 6px 0 var(--thread-a);
+    transform: translate(-3px, -3px);
+  }
+  .btn.ghost { color: var(--bone); border-color: var(--bone); }
+  .btn.ghost:hover {
+    color: var(--void); background: var(--bone);
+    box-shadow: 6px 6px 0 var(--thread-b);
+    transform: translate(-3px, -3px);
+  }
+  .btn::after { content: '→'; }
+
+  /* ============= 3D RAIL DIAGRAM (HERO) ============= */
+  .rail-stage {
+    perspective: 1600px;
+    position: relative;
+    height: 520px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rail-system {
+    transform-style: preserve-3d;
+    transform: rotateX(8deg) rotateY(-12deg);
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transition: transform .35s cubic-bezier(.2,.8,.2,1);
+  }
+
+  .hero-rail {
+    position: absolute;
+    left: 0; right: 0;
+    height: 90px;
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    align-items: center;
+    background: var(--panel);
+    border: 2px solid;
+    transform-style: preserve-3d;
+  }
+  .hero-rail.a { top: 30px; border-color: var(--thread-a); transform: translateZ(60px); box-shadow: 0 12px 30px -10px rgba(255,36,36,0.4); }
+  .hero-rail.b { bottom: 30px; border-color: var(--thread-b); transform: translateZ(60px); box-shadow: 0 12px 30px -10px rgba(255,230,0,0.4); }
+
+  .hero-rail .rail-name {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 28px;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1;
+    padding: 8px 6px;
+    border-right: 2px solid;
+  }
+  .hero-rail.a .rail-name { color: var(--thread-a); border-right-color: var(--thread-a); background: rgba(255,36,36,0.06); }
+  .hero-rail.b .rail-name { color: var(--thread-b); border-right-color: var(--thread-b); background: rgba(255,230,0,0.06); }
+  .hero-rail .rail-name small { display: block; font-family: var(--mono); font-weight: 400; font-size: 9px; letter-spacing: 0.25em; color: var(--bone-dim); margin-top: 3px; }
+
+  .hero-rail .rail-cars {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    overflow: hidden;
+  }
+  .car {
+    flex: 0 0 auto;
+    padding: 12px 14px;
+    background: var(--void);
+    border: 1px solid var(--steel);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--bone);
+    text-transform: uppercase;
+    min-width: 60px;
+    text-align: center;
+    transform-style: preserve-3d;
+  }
+  .hero-rail.a .car.hot { border-color: var(--thread-a); color: var(--thread-a); transform: translateZ(20px); box-shadow: 0 0 18px rgba(255,36,36,0.4); }
+  .hero-rail.b .car.hot { border-color: var(--thread-b); color: var(--thread-b); transform: translateZ(20px); box-shadow: 0 0 18px rgba(255,230,0,0.4); }
+  .car.write { background: rgba(255,36,36,0.1); }
+
+  /* shared resource floating between */
+  .resource-block {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) translateZ(140px) rotate(-3deg);
+    background: var(--bone);
+    color: var(--void);
+    padding: 18px 28px;
+    border: 3px solid var(--thread-a);
+    box-shadow: 8px 8px 0 var(--thread-b), 16px 16px 30px rgba(0,0,0,0.4);
+    z-index: 5;
+    text-align: center;
+  }
+  .resource-block .lbl {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .resource-block .val {
+    font-family: var(--display);
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--void);
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+  }
+  .resource-block .val em {
+    font-style: normal;
+    color: var(--conflict);
+  }
+
+  /* connection lines between threads and resource (drawn with CSS) */
+  .arc-line {
+    position: absolute;
+    left: 50%;
+    width: 2px;
+    background: var(--bone);
+    opacity: 0.25;
+    transform-origin: top center;
+  }
+  .arc-line.up    { top: 96px; height: 90px; transform: translateX(-50%) translateZ(80px); }
+  .arc-line.down  { bottom: 96px; height: 90px; transform: translateX(-50%) translateZ(80px); }
+
+  /* hero ribbon */
+  .ribbon {
+    margin-top: 56px;
+    padding: 14px 0;
+    overflow: hidden;
+    position: relative;
+    background: var(--bone);
+    color: var(--void);
+    border-top: 2px solid var(--bone);
+    border-bottom: 2px solid var(--bone);
+  }
+  .ribbon-track {
+    display: flex; gap: 64px;
+    white-space: nowrap;
+    animation: scroll 38s linear infinite;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 22px;
+    color: var(--void);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .ribbon-track span { display: inline-flex; align-items: center; gap: 64px; }
+  .ribbon-track span::after {
+    content: '◆';
+    color: var(--thread-a);
+    font-size: 16px;
+  }
+  @keyframes scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* ============= SECTION HEAD ============= */
+  section { padding: 100px 0; position: relative; }
+  .sec-head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 36px;
+    align-items: end;
+    margin-bottom: 56px;
+    border-bottom: 2px solid var(--bone);
+    padding-bottom: 28px;
+    position: relative;
+  }
+  .sec-head::before {
+    content: '';
+    position: absolute;
+    bottom: -2px; left: 0;
+    width: 96px; height: 5px;
+    background: var(--thread-a);
+  }
+  .sec-num {
+    font-family: var(--display);
+    font-size: 88px;
+    font-weight: 900;
+    color: var(--bone);
+    line-height: 0.85;
+    padding: 8px 36px 8px 0;
+    border-right: 2px solid var(--bone);
+    letter-spacing: -0.04em;
+    text-shadow: 4px 4px 0 var(--thread-a);
+  }
+  .sec-num small {
+    display: block;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-top: 8px;
+    font-weight: 400;
+    text-shadow: none;
+  }
+  .sec-title {
+    font-family: var(--display);
+    font-size: clamp(38px, 6vw, 84px);
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    color: var(--bone);
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .sec-title em {
+    font-style: normal;
+    color: var(--thread-a);
+  }
+  .sec-title .b { color: var(--thread-b); }
+  .sec-kicker {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--bone-soft);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .sec-lede {
+    font-family: var(--serif);
+    font-size: 19px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--bone-dim);
+    max-width: 760px;
+    margin-top: 22px;
+    font-weight: 400;
+  }
+
+  /* ============= ANATOMY ============= */
+  .anatomy-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+  }
+  .anat {
+    padding: 28px 24px;
+    background: var(--panel);
+    border: 2px solid var(--bone);
+    margin: 0 -2px -2px 0;
+    position: relative;
+    transition: background .25s;
+  }
+  .anat:hover { background: var(--panel-2); }
+  .anat .num {
+    font-family: var(--display);
+    font-size: 56px;
+    font-weight: 900;
+    color: var(--thread-a);
+    line-height: 0.85;
+    margin-bottom: 14px;
+    text-shadow: 3px 3px 0 var(--thread-a-d);
+  }
+  .anat h3 {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--bone);
+    margin-bottom: 12px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
+  .anat h3 em { font-style: normal; color: var(--thread-a); }
+  .anat p {
+    font-family: var(--body);
+    font-size: 14.5px;
+    color: var(--bone-dim);
+    margin-bottom: 14px;
+  }
+  .anat code {
+    display: block;
+    background: var(--void);
+    color: var(--thread-b-x);
+    padding: 11px 13px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.4;
+    border-left: 2px solid var(--thread-a);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* ============= LESSONS ============= */
+  .lessons { display: flex; flex-direction: column; gap: 0; }
+  .lesson {
+    display: grid;
+    grid-template-columns: 96px 1.1fr 1.2fr;
+    gap: 32px;
+    padding: 40px 0;
+    border-bottom: 2px solid var(--line);
+    align-items: stretch;
+    position: relative;
+    transition: background .25s;
+  }
+  .lesson:first-child { border-top: 2px solid var(--line); }
+  .lesson:hover { background: rgba(40,40,47,0.4); }
+
+  .lesson .roman {
+    font-family: var(--display);
+    font-size: 96px;
+    font-weight: 900;
+    color: var(--thread-a);
+    line-height: 0.85;
+    text-shadow: 4px 4px 0 var(--thread-a-d), 8px 8px 0 #220606;
+    transform: rotate(-2deg);
+  }
+  .lesson:nth-child(even) .roman {
+    color: var(--thread-b);
+    text-shadow: 4px 4px 0 var(--thread-b-d), 8px 8px 0 #221f00;
+    transform: rotate(2deg);
+  }
+
+  .lesson .body h4 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+    margin-bottom: 12px;
+  }
+  .lesson .body h2 {
+    font-family: var(--display);
+    font-size: 36px;
+    font-weight: 700;
+    text-transform: uppercase;
+    line-height: 1.0;
+    color: var(--bone);
+    margin-bottom: 18px;
+    letter-spacing: -0.01em;
+  }
+  .lesson .body h2 em { font-style: normal; color: var(--thread-a); }
+  .lesson .body h2 .b { color: var(--thread-b); }
+  .lesson .body p {
+    font-family: var(--body);
+    font-size: 16px;
+    color: var(--bone-dim);
+    margin-bottom: 12px;
+    line-height: 1.65;
+  }
+  .lesson .body p strong { color: var(--bone); font-weight: 500; }
+  .lesson .body p em {
+    font-family: var(--serif); font-style: italic; color: var(--thread-a);
+  }
+  .lesson .body p code {
+    font-family: var(--mono); font-size: 13px;
+    color: var(--bone); background: var(--panel-2);
+    padding: 1px 6px;
+  }
+
+  .lesson .demo {
+    background: var(--void);
+    color: var(--bone);
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    position: relative;
+    border: 2px solid var(--bone);
+    box-shadow: 8px 8px 0 var(--thread-a);
+    overflow: hidden;
+  }
+  .lesson:nth-child(even) .demo { box-shadow: 8px 8px 0 var(--thread-b); }
+  .lesson .demo::before {
+    content: 'TIMELINE';
+    position: absolute;
+    top: 0; left: 0;
+    background: var(--bone);
+    color: var(--void);
+    padding: 4px 10px;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    font-weight: 600;
+  }
+
+  .demo-inner { padding: 22px 22px 20px; padding-top: 28px; }
+  .demo .ta    { color: var(--thread-a-x); }
+  .demo .tb    { color: var(--thread-b-x); }
+  .demo .res   { color: var(--bone); font-weight: 500; }
+  .demo .bad   { color: var(--conflict); }
+  .demo .ok    { color: var(--safe); }
+  .demo .com   { color: var(--muted); font-style: italic; }
+  .demo .arrow { color: var(--bone); }
+
+  /* split timeline view in lessons */
+  .timeline-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .timeline-split > div {
+    padding: 6px 12px;
+    border-right: 1px dashed var(--steel);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .timeline-split > div:last-child { border-right: none; }
+  .timeline-split .head {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--steel);
+  }
+  .timeline-split .head.a { color: var(--thread-a); border-bottom-color: var(--thread-a); }
+  .timeline-split .head.b { color: var(--thread-b); border-bottom-color: var(--thread-b); }
+
+  /* ============= LIVE LAB ============= */
+  .lab-frame {
+    border: 2px solid var(--bone);
+    background: var(--void-2);
+    box-shadow: 12px 12px 0 var(--thread-a);
+    position: relative;
+  }
+  .lab-frame::before {
+    content: '— FIELD STUDY · INTERLEAVING SIMULATOR —';
+    position: absolute;
+    top: -2px; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--void);
+    padding: 4px 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--bone);
+    border: 2px solid var(--bone);
+    font-weight: 600;
+  }
+
+  /* mode tabs */
+  .mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 2px solid var(--line-strong);
+  }
+  .mode-tabs button {
+    padding: 22px 18px;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--line);
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+    cursor: pointer;
+    transition: all .15s;
+    text-align: left;
+    position: relative;
+    letter-spacing: -0.01em;
+  }
+  .mode-tabs button:last-child { border-right: none; }
+  .mode-tabs button .num {
+    display: block;
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .mode-tabs button:hover { color: var(--bone); }
+  .mode-tabs button.active {
+    color: var(--bone);
+    background: var(--panel);
+  }
+  .mode-tabs button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px; left: 0; right: 0;
+    height: 4px;
+    background: var(--thread-a);
+  }
+  .mode-tabs button[data-mode="bank"].active::after  { background: var(--thread-b); }
+  .mode-tabs button[data-mode="symlink"].active::after { background: var(--conflict); }
+  .mode-tabs button[data-mode="counter"].active::after { background: var(--thread-a); }
+
+  /* explainer panel — sits below the running visualisation as study notes */
+  .explainer {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    background: var(--panel);
+    border-top: 2px solid var(--bone);
+    position: relative;
+  }
+  .explainer::before {
+    content: '— STUDY NOTES · CONCEPT · ATTACKER PROCEDURE · KNOBS · OBSERVABLES —';
+    position: absolute;
+    top: -2px; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--void);
+    padding: 4px 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--bone);
+    border: 2px solid var(--bone);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .ex-col {
+    padding: 24px 26px;
+    border-right: 1px dashed var(--line);
+    position: relative;
+  }
+  .ex-col:last-child { border-right: none; }
+  .ex-col h6 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--thread-a);
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600;
+  }
+  .ex-col h6::before {
+    content: '§';
+    font-family: var(--display);
+    font-size: 18px;
+    color: var(--muted);
+    line-height: 0.7;
+    font-weight: 800;
+  }
+  .ex-col h6.ex-sub {
+    margin-top: 18px;
+    color: var(--thread-b);
+  }
+  .ex-col h6.ex-sub::before {
+    content: '◐';
+    color: var(--thread-a);
+    font-size: 13px;
+  }
+  .ex-col p {
+    font-family: var(--body);
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--bone-dim);
+    margin: 0;
+  }
+  .ex-col p em { font-family: var(--serif); font-style: italic; color: var(--thread-a); }
+  .ex-col p strong { color: var(--bone); font-weight: 500; }
+  .ex-col p code, .ex-col li code, .ex-steps li code {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--bone); background: var(--void);
+    padding: 1px 6px;
+    border: 1px solid var(--steel);
+  }
+  .ex-col ul { list-style: none; padding: 0; margin: 0; }
+  .ex-col li {
+    font-family: var(--body);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--bone-dim);
+    padding: 5px 0 5px 18px;
+    position: relative;
+  }
+  .ex-col li + li {
+    border-top: 1px dotted var(--line);
+    padding-top: 8px;
+    margin-top: 3px;
+  }
+  .ex-col li::before {
+    content: '◇';
+    position: absolute; left: 0; top: 5px;
+    color: var(--thread-a);
+    font-size: 10px;
+  }
+  .ex-col li strong { color: var(--bone); font-weight: 500; }
+  .ex-col ol.ex-steps { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  .ex-col ol.ex-steps li {
+    counter-increment: step;
+    font-family: var(--body);
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--bone-dim);
+    padding: 7px 0 7px 32px;
+    position: relative;
+    border: none; margin: 0;
+  }
+  .ex-col ol.ex-steps li::before {
+    content: counter(step, decimal-leading-zero);
+    position: absolute;
+    left: 0; top: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--thread-a);
+    width: 24px;
+    text-align: right;
+  }
+  .ex-col ol.ex-steps li + li {
+    border-top: 1px dotted var(--line);
+    margin-top: 2px;
+    padding-top: 11px;
+  }
+  .ex-col ol.ex-steps li strong { color: var(--bone); font-weight: 500; }
+  .ex-col ol.ex-steps li em { font-family: var(--serif); font-style: italic; color: var(--thread-b); }
+
+  /* lab body */
+  .lab-body {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    min-height: 600px;
+  }
+  .lab-controls {
+    padding: 26px 24px;
+    background: var(--panel);
+    border-right: 2px solid var(--line);
+  }
+  .lab-controls h5 {
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--bone);
+    margin-bottom: 6px;
+    line-height: 1.0;
+    letter-spacing: -0.01em;
+  }
+  .lab-controls h5 em { font-style: normal; color: var(--thread-a); }
+  .lab-controls .desc {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--bone-dim);
+    margin-bottom: 22px;
+    line-height: 1.55;
+  }
+  .ctrl { margin-bottom: 18px; }
+  .ctrl label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+    margin-bottom: 6px;
+  }
+  .ctrl input, .ctrl select, .ctrl textarea {
+    width: 100%;
+    background: var(--void);
+    border: 1px solid var(--steel);
+    color: var(--bone);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .ctrl input:focus, .ctrl select:focus, .ctrl textarea:focus {
+    border-color: var(--thread-a);
+    box-shadow: 4px 4px 0 var(--thread-a);
+  }
+  .ctrl input[type=range] {
+    padding: 0;
+    accent-color: var(--thread-a);
+  }
+  .ctrl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .switch { display: grid; border: 1px solid var(--steel); }
+  .switch.two { grid-template-columns: 1fr 1fr; }
+  .switch.three { grid-template-columns: 1fr 1fr 1fr; }
+  .switch button {
+    background: transparent; border: none;
+    padding: 10px 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    cursor: pointer;
+    color: var(--bone-soft);
+    transition: all .15s;
+  }
+  .switch button.on { background: var(--thread-a); color: var(--void); }
+  .switch button.on.safe { background: var(--safe); color: var(--void); }
+  .switch button.on.b { background: var(--thread-b); color: var(--void); }
+  .switch button:not(.on):hover { color: var(--bone); }
+
+  .run-btn {
+    width: 100%;
+    padding: 16px;
+    background: var(--bone);
+    color: var(--void);
+    border: 2px solid var(--bone);
+    font-family: var(--display);
+    font-size: 16px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all .15s;
+    margin-top: 6px;
+  }
+  .run-btn:hover {
+    background: var(--thread-a); border-color: var(--thread-a);
+    box-shadow: 6px 6px 0 var(--bone);
+    transform: translate(-3px, -3px);
+  }
+  .run-btn:active { transform: translate(0,0); box-shadow: 2px 2px 0 var(--bone); }
+  .run-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  /* lab stage: transport bar + rail visualization + transcript */
+  .lab-stage {
+    display: grid;
+    grid-template-rows: auto 1fr 220px;
+    background: var(--void);
+  }
+
+  /* transport bar — playback controls */
+  .transport-bar {
+    display: flex;
+    align-items: stretch;
+    background: var(--panel);
+    border-bottom: 2px solid var(--bone);
+    height: 56px;
+  }
+  .transport-bar button {
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--steel);
+    padding: 0 22px;
+    color: var(--bone);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all .12s;
+    font-family: var(--mono);
+    min-width: 64px;
+  }
+  .transport-bar button:hover:not(:disabled) {
+    background: var(--bone); color: var(--void);
+  }
+  .transport-bar button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .transport-bar button:disabled {
+    color: var(--muted); cursor: not-allowed; opacity: 0.5;
+  }
+  .transport-bar #ctrlPlay {
+    background: var(--thread-a);
+    color: var(--void);
+    border-right: 2px solid var(--bone);
+    font-weight: 800;
+    font-size: 20px;
+    min-width: 84px;
+  }
+  .transport-bar #ctrlPlay:hover:not(:disabled) {
+    background: var(--bone); color: var(--thread-a);
+  }
+  .transport-bar #ctrlPlay.playing {
+    background: var(--thread-b); color: var(--void);
+  }
+  .transport-bar #ctrlPlay.playing:hover {
+    background: var(--bone); color: var(--thread-b);
+  }
+  .transport-bar #ctrlReset {
+    color: var(--bone-soft);
+  }
+  .transport-bar #ctrlReset:hover:not(:disabled) {
+    background: var(--conflict); color: var(--void);
+  }
+  .transport-bar .step-display {
+    flex: 1;
+    align-self: center;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--bone-dim);
+    padding: 0 16px;
+    font-weight: 500;
+  }
+  .transport-bar .step-display strong {
+    color: var(--bone);
+    font-weight: 700;
+  }
+  .transport-bar .speed-control {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 18px;
+    border-left: 1px solid var(--steel);
+  }
+  .transport-bar .speed-control label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+  }
+  .transport-bar .speed-control input[type=range] {
+    width: 130px;
+    accent-color: var(--thread-a);
+    background: transparent;
+  }
+
+  .rail-area {
+    padding: 30px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    position: relative;
+    background:
+      radial-gradient(ellipse at 50% 50%, rgba(255,36,36,0.04) 0%, transparent 70%),
+      var(--void);
+    border-bottom: 2px solid var(--line);
+    overflow-y: auto;
+    max-height: 580px;
+  }
+
+  .rail-block {
+    display: grid;
+    grid-template-columns: 130px 1fr 168px;
+    align-items: stretch;
+    border: 2px solid;
+    background: var(--panel);
+    transition: box-shadow .25s;
+  }
+
+  /* locals pane — per-thread "register file" */
+  .locals-pane {
+    border-left: 1px solid var(--steel);
+    background: rgba(0,0,0,0.30);
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+    max-height: 100%;
+  }
+  .rail-block.a .locals-pane { border-left-color: var(--thread-a-d); }
+  .rail-block.b .locals-pane { border-left-color: var(--thread-b-d); }
+  .locals-pane .label {
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    font-weight: 500;
+    border-bottom: 1px dashed var(--steel);
+  }
+  .locals-pane .lrow {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 6px;
+    align-items: baseline;
+    line-height: 1.35;
+  }
+  .locals-pane .k {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--bone-soft);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .locals-pane .v {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    word-break: break-all;
+    padding: 1px 5px;
+    border-radius: 1px;
+    color: var(--bone);
+    transition: background .35s ease-out, color .35s ease-out;
+  }
+  .rail-block.a .locals-pane .v { color: var(--thread-a-x); }
+  .rail-block.b .locals-pane .v { color: var(--thread-b-x); }
+  .rail-block.a .locals-pane .v.changed {
+    animation: localFlashA .55s cubic-bezier(.2,.8,.2,1);
+  }
+  .rail-block.b .locals-pane .v.changed {
+    animation: localFlashB .55s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes localFlashA {
+    0%   { background: var(--thread-a); color: var(--void); transform: scale(1.06); }
+    60%  { background: rgba(255,36,36,0.25); }
+    100% { background: transparent; transform: scale(1); }
+  }
+  @keyframes localFlashB {
+    0%   { background: var(--thread-b); color: var(--void); transform: scale(1.06); }
+    60%  { background: rgba(255,230,0,0.25); }
+    100% { background: transparent; transform: scale(1); }
+  }
+  .rail-block.a { border-color: var(--thread-a); }
+  .rail-block.b { border-color: var(--thread-b); }
+  .rail-block.a.active { box-shadow: 0 0 0 2px var(--thread-a-d), 0 0 30px rgba(255,36,36,0.3); }
+  .rail-block.b.active { box-shadow: 0 0 0 2px var(--thread-b-d), 0 0 30px rgba(255,230,0,0.3); }
+
+  .rail-name {
+    padding: 14px 12px;
+    border-right: 2px solid;
+    text-align: center;
+    background: var(--void);
+  }
+  .rail-block.a .rail-name { border-right-color: var(--thread-a); color: var(--thread-a); }
+  .rail-block.b .rail-name { border-right-color: var(--thread-b); color: var(--thread-b); }
+  .rail-name .name {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .rail-name .stat {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--bone-soft);
+    margin-top: 6px;
+  }
+
+  .rail-ops {
+    display: flex;
+    gap: 4px;
+    padding: 10px;
+    overflow-x: auto;
+    align-items: center;
+  }
+  .op {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    background: var(--void);
+    border: 1px solid var(--steel);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--bone-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    min-width: 54px;
+    text-align: center;
+    transition: all .2s cubic-bezier(.2,.8,.2,1);
+    white-space: nowrap;
+  }
+  .op .op-kind {
+    display: block;
+    font-weight: 600;
+    font-size: 10px;
+  }
+  .op .op-detail {
+    display: block;
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .op.done { color: var(--bone-dim); border-color: var(--steel-2); }
+  .op.active.a {
+    background: rgba(255,36,36,0.18);
+    border-color: var(--thread-a);
+    color: var(--thread-a);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(255,36,36,0.4);
+  }
+  .op.active.b {
+    background: rgba(255,230,0,0.18);
+    border-color: var(--thread-b);
+    color: var(--thread-b);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(255,230,0,0.4);
+  }
+  .op.touched.a { border-color: var(--thread-a-d); color: var(--thread-a-x); }
+  .op.touched.b { border-color: var(--thread-b-d); color: var(--thread-b-x); }
+  .op.collide {
+    background: rgba(255,0,170,0.2);
+    border-color: var(--conflict);
+    color: var(--conflict);
+    box-shadow: 0 0 18px rgba(255,0,170,0.5);
+  }
+
+  /* code dock — two source panels above the rails */
+  .code-dock {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 6px;
+  }
+  .code-pane {
+    background: var(--void);
+    border: 2px solid var(--steel);
+    position: relative;
+    overflow: hidden;
+  }
+  .code-pane.a { border-color: var(--thread-a); box-shadow: 6px 6px 0 var(--thread-a-d); }
+  .code-pane.b { border-color: var(--thread-b); box-shadow: 6px 6px 0 var(--thread-b-d); }
+  .code-pane .head {
+    padding: 9px 14px;
+    background: rgba(255,36,36,0.10);
+    border-bottom: 1px solid var(--steel);
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--thread-a);
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .code-pane.b .head { background: rgba(255,230,0,0.10); color: var(--thread-b); }
+  .code-pane .head small {
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    color: var(--bone-soft);
+    text-transform: uppercase;
+  }
+  .code-pane pre {
+    margin: 0;
+    padding: 8px 0 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--bone-dim);
+    overflow-x: auto;
+  }
+  .code-line {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    padding: 0;
+    position: relative;
+  }
+  .code-line .ln {
+    text-align: right;
+    color: var(--muted);
+    padding-right: 10px;
+    font-size: 10.5px;
+    user-select: none;
+    border-right: 1px solid var(--steel);
+    line-height: 1.65;
+  }
+  .code-line .ld {
+    padding-left: 12px;
+    color: var(--bone-dim);
+    white-space: pre;
+    overflow-x: hidden;
+    text-overflow: ellipsis;
+  }
+  .code-line .ld .kw  { color: var(--accent); }
+  .code-line .ld .str { color: var(--thread-b-x); }
+  .code-line .ld .com { color: var(--muted); font-style: italic; }
+  .code-line .ld .fn  { color: var(--bone); }
+  .code-line .ld .num { color: var(--safe); }
+  .code-line .ld .op  { color: var(--bone); font-weight: 500; }
+
+  /* active-line highlighting per thread color */
+  .code-pane.a .code-line.active {
+    background: linear-gradient(90deg, rgba(255,36,36,0.22), rgba(255,36,36,0.04));
+  }
+  .code-pane.a .code-line.active .ln {
+    color: var(--thread-a); border-right-color: var(--thread-a); font-weight: 700;
+  }
+  .code-pane.a .code-line.active .ld {
+    color: var(--bone);
+  }
+  .code-pane.a .code-line.active::before {
+    content: '▶';
+    position: absolute;
+    left: -12px;
+    top: 0;
+    color: var(--thread-a);
+    font-size: 12px;
+    text-shadow: 0 0 8px rgba(255,36,36,0.9);
+  }
+  .code-pane.b .code-line.active {
+    background: linear-gradient(90deg, rgba(255,230,0,0.22), rgba(255,230,0,0.04));
+  }
+  .code-pane.b .code-line.active .ln {
+    color: var(--thread-b); border-right-color: var(--thread-b); font-weight: 700;
+  }
+  .code-pane.b .code-line.active .ld {
+    color: var(--bone);
+  }
+  .code-pane.b .code-line.active::before {
+    content: '▶';
+    position: absolute;
+    left: -12px;
+    top: 0;
+    color: var(--thread-b);
+    font-size: 12px;
+    text-shadow: 0 0 8px rgba(255,230,0,0.9);
+  }
+
+  /* shared resource panel */
+  .resource-panel {
+    align-self: center;
+    width: 100%;
+    max-width: 540px;
+    background: var(--bone);
+    color: var(--void);
+    padding: 18px 24px;
+    border: 2px solid var(--bone);
+    box-shadow: 8px 8px 0 var(--thread-a);
+    position: relative;
+    transition: transform .2s;
+  }
+  .resource-panel.flash {
+    animation: flash 0.4s ease-out;
+  }
+  @keyframes flash {
+    0%   { transform: scale(1); box-shadow: 8px 8px 0 var(--thread-a); }
+    35%  { transform: scale(1.03); box-shadow: 12px 12px 0 var(--conflict); }
+    100% { transform: scale(1); box-shadow: 8px 8px 0 var(--thread-a); }
+  }
+  .resource-panel .lbl {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .resource-panel .val {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 32px;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    color: var(--void);
+    word-break: break-all;
+  }
+  .resource-panel .val em { font-style: normal; color: var(--thread-a); }
+  .resource-panel .val.bad { color: var(--conflict); }
+  .resource-panel .val.ok { color: var(--safe-d); }
+  .resource-panel .meta {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* outcome banner */
+  .outcome {
+    align-self: center;
+    width: 100%;
+    max-width: 540px;
+    padding: 14px 18px;
+    border: 2px solid;
+    background: var(--panel-2);
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+    font-weight: 600;
+    transition: all .25s;
+  }
+  .outcome.idle { border-color: var(--steel); color: var(--bone-dim); }
+  .outcome.bad  { border-color: var(--conflict); color: var(--conflict); background: rgba(255,0,170,0.06); }
+  .outcome.ok   { border-color: var(--safe); color: var(--safe); background: rgba(43,218,130,0.06); }
+
+  /* transcript */
+  .transcript {
+    background: var(--void);
+    color: var(--bone);
+    padding: 18px 22px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-y: auto;
+    max-height: 220px;
+    position: relative;
+  }
+  .transcript::before {
+    content: 'INTERLEAVING TRANSCRIPT';
+    position: absolute;
+    top: -1px; left: 18px;
+    transform: translateY(-50%);
+    background: var(--void);
+    padding: 2px 10px;
+    font-size: 9px;
+    letter-spacing: 0.32em;
+    color: var(--bone);
+    border: 1px solid var(--bone);
+    font-weight: 600;
+  }
+  .t-line { display: block; white-space: pre-wrap; word-break: break-word; }
+  .t-line .ta { color: var(--thread-a-x); }
+  .t-line .tb { color: var(--thread-b-x); }
+  .t-line .info { color: var(--accent); }
+  .t-line .res  { color: var(--bone); font-weight: 600; }
+  .t-line .bad  { color: var(--conflict); }
+  .t-line .ok   { color: var(--safe); }
+  .t-line .dim  { color: var(--muted); }
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: var(--bone);
+    vertical-align: text-bottom;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ============= DEFENSES ============= */
+  .def-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+  .def {
+    padding: 30px 26px;
+    background: var(--panel);
+    border: 2px solid var(--bone);
+    margin: 0 -2px -2px 0;
+    position: relative;
+  }
+  .def::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 36px; height: 4px;
+    background: var(--safe);
+  }
+  .def .icon {
+    width: 48px; height: 48px;
+    border: 2px solid var(--safe);
+    color: var(--safe);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--display);
+    font-size: 22px;
+    margin-bottom: 22px;
+    font-weight: 800;
+  }
+  .def h4 {
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--bone);
+    margin-bottom: 12px;
+    line-height: 1.0;
+    letter-spacing: -0.01em;
+  }
+  .def h4 em { font-style: normal; color: var(--safe); }
+  .def p {
+    font-family: var(--body);
+    font-size: 14.5px;
+    color: var(--bone-dim);
+    margin-bottom: 14px;
+  }
+  .def p strong { color: var(--bone); font-weight: 500; }
+  .def code {
+    display: block;
+    background: var(--void);
+    color: var(--safe);
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-left: 2px solid var(--safe);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* ============= FOOTER ============= */
+  footer {
+    border-top: 2px solid var(--bone);
+    padding: 56px 0 80px;
+    margin-top: 64px;
+    background: var(--void-2);
+  }
+  .colophon {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 44px;
+  }
+  .colophon h5 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--thread-a);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+  .colophon p {
+    font-family: var(--body);
+    font-size: 14.5px;
+    color: var(--bone-dim);
+    line-height: 1.65;
+  }
+  .colophon p em { color: var(--thread-a); font-family: var(--serif); font-style: italic; }
+  .colophon a {
+    display: block;
+    font-family: var(--body);
+    font-size: 14.5px;
+    color: var(--bone-dim);
+    text-decoration: none;
+    line-height: 1.7;
+    transition: color .15s;
+  }
+  .colophon a:hover { color: var(--thread-a); }
+  .colophon .stamp {
+    margin-top: 28px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.32em;
+    color: var(--muted);
+    text-transform: uppercase;
+    border-top: 1px dashed var(--line);
+    padding-top: 14px;
+  }
+
+  /* ============= RESPONSIVE ============= */
+  @media (max-width: 980px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .rail-stage { height: 420px; }
+    .anatomy-grid { grid-template-columns: 1fr 1fr; }
+    .lesson { grid-template-columns: 70px 1fr; }
+    .lesson .demo { grid-column: 1 / -1; }
+    .mode-tabs { grid-template-columns: 1fr 1fr; }
+    .explainer { grid-template-columns: 1fr; }
+    .ex-col { border-right: none; border-bottom: 1px dashed var(--line); }
+    .ex-col:last-child { border-bottom: none; }
+    .lab-body { grid-template-columns: 1fr; }
+    .lab-controls { border-right: none; border-bottom: 2px solid var(--line); }
+    .def-grid { grid-template-columns: 1fr; }
+    .colophon { grid-template-columns: 1fr; }
+    .panel-readout { grid-template-columns: 1fr 1fr; }
+    .timeline-split { grid-template-columns: 1fr; }
+    .rail-block { grid-template-columns: 80px 1fr 130px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grain"></div>
+
+<!-- =========== NAV =========== -->
+<nav class="top">
+  <div class="row">
+    <div class="brand"><span class="mark"></span> RACE-CONDITIONS · MANIFESTO LAB · v1.0</div>
+    <div class="links">
+      <a href="#anatomy">Anatomy</a>
+      <a href="#lessons">Plates</a>
+      <a href="#lab">Field Study</a>
+      <a href="#defenses">Defenses</a>
+    </div>
+  </div>
+</nav>
+
+<!-- =========== HERO =========== -->
+<header class="hero wrap">
+  <div class="hero-grid">
+    <div>
+      <div class="vol">manifesto · vol. iv · concurrency without consent</div>
+      <h1 class="title">RACE<br><em>CONDITIONS<span class="vs">.</span></em><span class="small">— two threads, one resource, no agreement on order.</span></h1>
+      <p class="lede">A program assumes operations happen <em>in the order it wrote them.</em> The CPU disagrees. So does the kernel scheduler, the network stack, the filesystem, and any attacker patient enough to run a tight loop. <strong>Race conditions exist in the gap between when you check a thing and when you use it.</strong> The attacker's whole job is to make that gap exploitable.</p>
+
+      <div class="panel-readout">
+        <div class="readout-cell"><div class="k">CWE</div><div class="v">362 / 367</div></div>
+        <div class="readout-cell"><div class="k">primitive</div><div class="v a">interleave</div></div>
+        <div class="readout-cell"><div class="k">vector</div><div class="v b">timing</div></div>
+        <div class="readout-cell"><div class="k">consequence</div><div class="v crit">corruption · escalation</div></div>
+      </div>
+
+      <div class="cta-row">
+        <a href="#lab" class="btn solid">Open the Field Study</a>
+        <a href="#anatomy" class="btn ghost">Begin at the Beginning</a>
+      </div>
+    </div>
+
+    <div class="rail-stage" id="heroStage">
+      <div class="rail-system" id="heroSystem">
+        <div class="hero-rail a">
+          <div class="rail-name">A<small>thread α</small></div>
+          <div class="rail-cars">
+            <div class="car">READ</div>
+            <div class="car hot">+1</div>
+            <div class="car">WRITE</div>
+            <div class="car">READ</div>
+            <div class="car">+1</div>
+            <div class="car">WRITE</div>
+          </div>
+        </div>
+        <div class="hero-rail b">
+          <div class="rail-name">B<small>thread β</small></div>
+          <div class="rail-cars">
+            <div class="car">READ</div>
+            <div class="car">+1</div>
+            <div class="car hot">WRITE</div>
+            <div class="car">READ</div>
+            <div class="car">+1</div>
+            <div class="car">WRITE</div>
+          </div>
+        </div>
+        <div class="resource-block">
+          <div class="lbl">SHARED RESOURCE</div>
+          <div class="val">counter = <em>3</em></div>
+        </div>
+        <div class="arc-line up"></div>
+        <div class="arc-line down"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ribbon">
+    <div class="ribbon-track">
+      <span>CHECK · USE · CHECK · USE · GAP · ATTACKER · WINS · ◆ · CHECK · USE · CHECK · USE</span>
+      <span>CHECK · USE · CHECK · USE · GAP · ATTACKER · WINS · ◆ · CHECK · USE · CHECK · USE</span>
+      <span>CHECK · USE · CHECK · USE · GAP · ATTACKER · WINS · ◆ · CHECK · USE · CHECK · USE</span>
+    </div>
+  </div>
+</header>
+
+<!-- =========== ANATOMY =========== -->
+<section id="anatomy" class="wrap">
+  <div class="sec-head">
+    <div class="sec-num">I<small>cap. prima</small></div>
+    <div>
+      <div class="sec-kicker">// the four ingredients of every race</div>
+      <h2 class="sec-title">how a race <em>actually</em> works.</h2>
+      <p class="sec-lede">A race condition isn't a special bug. It's an unavoidable consequence of four ordinary properties stacking up: shared mutable state, concurrent access, a non-atomic operation, and missing synchronisation. Remove any one of these four and the bug is impossible. Forget any one of them and the bug is inevitable.</p>
+    </div>
+  </div>
+
+  <div class="anatomy-grid">
+    <div class="anat">
+      <div class="num">01</div>
+      <h3>Shared mutable <em>state</em></h3>
+      <p>A piece of data that more than one thread of execution can read or write — an integer in memory, a row in a database, a file on disk, a counter on a remote API.</p>
+      <code>int balance = 100;       /* shared */</code>
+    </div>
+    <div class="anat">
+      <div class="num">02</div>
+      <h3><em>Concurrent</em> access</h3>
+      <p>Two or more flows reach that state at overlapping times. Threads, processes, async callbacks, network requests. The CPU and scheduler decide the actual order — not your source code.</p>
+      <code>thread_create(worker_a);
+thread_create(worker_b);</code>
+    </div>
+    <div class="anat">
+      <div class="num">03</div>
+      <h3>Non-<em>atomic</em> operation</h3>
+      <p>What looks like one statement is several machine steps. <strong>counter++</strong> is read, add, write — three points where another thread can interrupt you and read or change the same value.</p>
+      <code>counter++;
+/* mov, inc, mov */</code>
+    </div>
+    <div class="anat">
+      <div class="num">04</div>
+      <h3>No <em>synchronization</em></h3>
+      <p>Nothing forces one of those flows to finish before the other touches the state. No mutex, no atomic instruction, no transaction, no row lock, no file descriptor — just hope.</p>
+      <code>// no lock, no atomic, no fence</code>
+    </div>
+  </div>
+</section>
+
+<!-- =========== LESSONS =========== -->
+<section id="lessons" class="wrap">
+  <div class="sec-head">
+    <div class="sec-num">II<small>cap. secunda</small></div>
+    <div>
+      <div class="sec-kicker">// six steps from harmless to root</div>
+      <h2 class="sec-title">a <em>compendium</em> of races against trust.</h2>
+      <p class="sec-lede">Plates i and ii establish the mechanics: serial code is safe, concurrent code without locks is not. Plates iii through v are the three classic exploitation patterns — counter races, file TOCTOU, and bank-style state corruption. Plate vi is the symlink trick that turns any "write to /tmp" into a privileged-file overwrite primitive.</p>
+    </div>
+  </div>
+
+  <div class="lessons">
+    <div class="lesson">
+      <div class="roman">i.</div>
+      <div class="body">
+        <h4>// plate i</h4>
+        <h2>The <em>serial</em> baseline.</h2>
+        <p>A single thread of execution. Operations happen in the order written. <code>counter++</code> means the entire read-add-write sequence completes before the next statement. This is the model every C tutorial assumes — and the model that <em>fails the moment you add a second thread</em>.</p>
+        <p>Nothing in the source code below changes when we go concurrent. What changes is everything <strong>around</strong> it.</p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+<span class="ta">int counter = 0;</span>
+<span class="ta">for (int i = 0; i &lt; 1000; i++)  counter++;</span>
+
+<span class="com">// counter is an int.</span>
+<span class="com">// counter++ compiles to: read counter → add 1 → write counter</span>
+<span class="com">// in serial code these three steps are uninterruptible from the program's view.</span>
+<span class="ok">RESULT: counter = 1000   ✓ as expected</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="roman">ii.</div>
+      <div class="body">
+        <h4>// plate ii</h4>
+        <h2>Two threads, <em>one counter</em> — the lost update.</h2>
+        <p>Spawn two threads, each running the same loop a thousand times. Expected total: 2000. Actual total: somewhere between 1000 and 2000, varying every run. Why? Because <code>counter++</code> is three machine instructions, and the OS can preempt you between any of them.</p>
+        <p>If both threads execute READ at the same moment, both compute the same +1, both write it back. Two increments collapse into one. <em>The bug is silent</em> — no exception, no crash, just a wrong number.</p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+          <div class="timeline-split">
+            <div>
+              <div class="head a">THREAD A</div>
+              <span class="ta">read  counter (=5)</span>
+              <span class="com">                       ↓ preempted</span>
+              <span class="ta">add 1 → t = 6</span>
+              <span class="ta">write counter ← 6</span>
+            </div>
+            <div>
+              <div class="head b">THREAD B</div>
+              <span class="com">                       (waiting)</span>
+              <span class="tb">read  counter (=5)</span>
+              <span class="tb">add 1 → t = 6</span>
+              <span class="tb">write counter ← 6</span>
+            </div>
+          </div>
+<span class="bad">                        ↓</span>
+<span class="bad">RESULT: counter = 6   (expected 7) — one increment LOST</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="roman">iii.</div>
+      <div class="body">
+        <h4>// plate iii</h4>
+        <h2><em>TOCTOU</em> — check then use.</h2>
+        <p>A privileged process verifies a property of the world (a file's owner, a permission bit, a balance), then acts on that property. Between <em>verify</em> and <em>act</em>, an attacker changes the world. The privileged process trusted the verification and acted on a stale fact.</p>
+        <p>The classic Unix example: <code>access("/tmp/x", W_OK)</code> followed by <code>open("/tmp/x", O_WRONLY)</code>. Between them, the attacker swaps <code>/tmp/x</code> for a symlink to <code>/etc/passwd</code>. <strong>access() said yes. open() opens passwd. Privileged code writes attacker-chosen content.</strong></p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+          <div class="timeline-split">
+            <div>
+              <div class="head a">PRIVILEGED PROC (root)</div>
+              <span class="ta">access("/tmp/x", W_OK)  → ok</span>
+              <span class="com">                       ↓ scheduler gap</span>
+              <span class="com">                       ↓</span>
+              <span class="ta">open("/tmp/x", O_WRONLY)</span>
+              <span class="ta">write(fd, "trusted log line")</span>
+            </div>
+            <div>
+              <div class="head b">ATTACKER (unprivileged)</div>
+              <span class="com">                       (waiting)</span>
+              <span class="tb">unlink("/tmp/x")</span>
+              <span class="tb">symlink("/etc/passwd", "/tmp/x")</span>
+              <span class="com">                       (returns)</span>
+              <span class="com">                       (returns)</span>
+            </div>
+          </div>
+<span class="bad">                        ↓</span>
+<span class="bad">RESULT: /etc/passwd OVERWRITTEN by privileged process — root escalation</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="roman">iv.</div>
+      <div class="body">
+        <h4>// plate iv</h4>
+        <h2>Bank <em>double-spend</em> — concurrent withdrawals.</h2>
+        <p>Account balance is $100. Two simultaneous requests arrive, each asking to withdraw $80. The naive backend: <code>read balance</code> → <code>check balance ≥ 80</code> → <code>balance -= 80</code> → <code>write balance</code>. Both requests can pass the check (balance was $100 when they read it). Both subtract $80. Both write back $20.</p>
+        <p>$160 leaves the account. Final balance: $20 instead of -$60. <em>The check told the truth. The check was just stale by the time the write happened.</em> Real cases: cryptocurrency exchanges, in-app purchase double-redemption, gift-card refund duplication.</p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+          <div class="timeline-split">
+            <div>
+              <div class="head a">REQUEST 1 (-$80)</div>
+              <span class="ta">SELECT balance     → 100</span>
+              <span class="ta">if 100 ≥ 80         ✓</span>
+              <span class="com">                       ↓ overlap</span>
+              <span class="ta">UPDATE balance = 20</span>
+              <span class="ta">return SUCCESS</span>
+            </div>
+            <div>
+              <div class="head b">REQUEST 2 (-$80)</div>
+              <span class="com">                       (overlap)</span>
+              <span class="tb">SELECT balance     → 100</span>
+              <span class="tb">if 100 ≥ 80         ✓</span>
+              <span class="tb">UPDATE balance = 20</span>
+              <span class="tb">return SUCCESS</span>
+            </div>
+          </div>
+<span class="bad">                        ↓</span>
+<span class="bad">RESULT: balance = $20 (expected -$60)  ·  $160 withdrawn from $100 account</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="roman">v.</div>
+      <div class="body">
+        <h4>// plate v</h4>
+        <h2>Symlink <em>race</em> — privileged temp files.</h2>
+        <p>A setuid program creates a working file at a predictable path: <code>/tmp/myprog.tmp</code>. Between deciding the path and opening it, the attacker — running in a tight loop — deletes the file and replaces it with a symlink pointing at <code>/etc/shadow</code>. The privileged <code>open(O_CREAT|O_WRONLY)</code> follows the symlink and writes attacker-chosen content into shadow.</p>
+        <p>Mitigation: never use predictable paths (<code>mkstemp</code> is the safe API), never re-open by path after a check (use file descriptors), and pass <code>O_NOFOLLOW</code> when you must open by path.</p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+          <div class="timeline-split">
+            <div>
+              <div class="head a">SETUID BINARY (root)</div>
+              <span class="ta">stat("/tmp/myprog.tmp")  → ENOENT</span>
+              <span class="com">                       ↓ window</span>
+              <span class="ta">fd = open(..., O_CREAT, 0644)</span>
+              <span class="ta">write(fd, log_data)</span>
+              <span class="ta">close(fd)</span>
+            </div>
+            <div>
+              <div class="head b">ATTACKER LOOP</div>
+              <span class="tb">while true:</span>
+              <span class="tb">  unlink("/tmp/myprog.tmp")</span>
+              <span class="tb">  symlink("/etc/shadow", "/tmp/myprog.tmp")</span>
+              <span class="tb">  unlink("/tmp/myprog.tmp")</span>
+              <span class="tb">  ...</span>
+            </div>
+          </div>
+<span class="bad">                        ↓</span>
+<span class="bad">RESULT: /etc/shadow corrupted by privileged write — root password compromised</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="roman">vi.</div>
+      <div class="body">
+        <h4>// plate vi</h4>
+        <h2>Web <em>HTTP race</em> — same idea, network speed.</h2>
+        <p>Web applications have the same shape. Click "redeem coupon" 50 times in parallel; if the backend's "has user redeemed?" check isn't atomic with the redemption write, the user redeems 50 coupons. Submit two simultaneous "transfer to friend" requests; both pass the balance check; both succeed.</p>
+        <p>Modern frameworks have async checked-then-mutated patterns everywhere. The fix is the same as for threads: <em>the check and the use must be one atomic step</em> — usually a single SQL <code>UPDATE … WHERE balance ≥ amount</code> with a row lock, or a database transaction with serializable isolation.</p>
+      </div>
+      <div class="demo">
+        <div class="demo-inner">
+<span class="ta">POST /coupon/redeem  ×50  (fired in parallel)</span>
+<span class="com">// backend pseudo-code:</span>
+<span class="com">  if (db.get("user.has_redeemed") == false):     ← all 50 requests pass here</span>
+<span class="com">      db.set("user.has_redeemed", true)</span>
+<span class="com">      issue_credit(user, 100)                   ← all 50 issue credit</span>
+<span class="bad">RESULT: 5,000 credit issued for one coupon</span>
+
+<span class="com">// fix: db.update("UPDATE u SET redeemed=true WHERE redeemed=false")  → returns rows affected</span>
+<span class="ok">         exactly one row will return 1; the rest return 0; only that one issues credit</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== LIVE LAB =========== -->
+<section id="lab" class="wrap">
+  <div class="sec-head">
+    <div class="sec-num">III<small>cap. tertia</small></div>
+    <div>
+      <div class="sec-kicker">// touch the gap</div>
+      <h2 class="sec-title">field study — <em>watch</em> the threads <em class="b">collide.</em></h2>
+      <p class="sec-lede">A real interleaving simulator. Two threads, with their operations laid out as cards along parallel rails. The scheduler picks one thread at a time to advance; the shared resource updates as ops fire. Toggle synchronisation and watch the same workload produce correct results — or not.</p>
+    </div>
+  </div>
+
+  <div class="lab-frame">
+    <div class="mode-tabs" id="modeTabs">
+      <button data-mode="counter" class="active">
+        <span class="num">scenario · i</span>
+        Lost update
+      </button>
+      <button data-mode="toctou">
+        <span class="num">scenario · ii</span>
+        TOCTOU file
+      </button>
+      <button data-mode="bank">
+        <span class="num">scenario · iii</span>
+        Bank double-spend
+      </button>
+      <button data-mode="symlink">
+        <span class="num">scenario · iv</span>
+        Symlink race
+      </button>
+    </div>
+
+    <div class="lab-body">
+      <aside class="lab-controls" id="labControls"><!-- per-mode --></aside>
+
+      <div class="lab-stage">
+        <div class="transport-bar" id="transportBar">
+          <button id="ctrlReset" title="Reset">⏹</button>
+          <button id="ctrlPrev"  title="Step Back">⏮</button>
+          <button id="ctrlPlay"  title="Play / Pause">▶</button>
+          <button id="ctrlNext"  title="Step Forward">⏭</button>
+          <div class="step-display" id="stepDisplay">step <strong>—</strong> / <strong>—</strong></div>
+          <div class="speed-control">
+            <label for="ctrlSpeed">speed</label>
+            <input id="ctrlSpeed" type="range" min="60" max="800" value="240">
+          </div>
+        </div>
+        <div class="rail-area" id="railArea">
+          <!-- thread rails + resource panel rendered per mode -->
+        </div>
+
+        <div class="transcript" id="transcript">
+          <span class="t-line dim">[ field-study · ready ]</span>
+          <span class="t-line dim">[ choose a scenario, set parameters, press the action button ]</span>
+          <span class="t-line">&nbsp;</span>
+          <span class="t-line"><span class="cursor"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="explainer" id="explainer"><!-- per-mode study notes — appears below the visualisation --></div>
+  </div>
+</section>
+
+<!-- =========== DEFENSES =========== -->
+<section id="defenses" class="wrap">
+  <div class="sec-head">
+    <div class="sec-num">IV<small>cap. quarta</small></div>
+    <div>
+      <div class="sec-kicker">// six controls in depth</div>
+      <h2 class="sec-title">how the gap <em class="b">closes.</em></h2>
+      <p class="sec-lede">No single defense covers every variant. Locks serialise threads. Atomics make a single read-modify-write uninterruptible. Compare-and-swap lets you retry under conflict. File descriptors close the path-rebind window. Database transactions push the problem onto a system that's good at it. The cheapest defense — design — is to avoid sharing in the first place.</p>
+    </div>
+  </div>
+
+  <div class="def-grid">
+    <div class="def">
+      <div class="icon">🔒</div>
+      <h4>Mutex / <em>lock</em></h4>
+      <p>Serialise the critical section. Only one thread holds the lock at a time; everyone else waits. Coarse but correct. The cost is contention: a busy lock becomes a bottleneck. Use the smallest possible critical section.</p>
+      <code>lock(); counter++; unlock();</code>
+    </div>
+    <div class="def">
+      <div class="icon">⚛</div>
+      <h4>Atomic <em>operations</em></h4>
+      <p>Single-instruction primitives that read-modify-write without preemption. <strong>__atomic_fetch_add</strong> in C, <strong>AtomicInteger.incrementAndGet</strong> in Java. Free of contention up to the point where the cache line itself becomes hot.</p>
+      <code>__atomic_fetch_add(&counter, 1, __ATOMIC_SEQ_CST);</code>
+    </div>
+    <div class="def">
+      <div class="icon">∮</div>
+      <h4>Compare-<em>and-swap</em></h4>
+      <p>Lock-free pattern: read old value, compute new, attempt to swap, retry on conflict. Foundation of optimistic concurrency, used inside databases, schedulers, and language runtimes.</p>
+      <code>do { old = x; } while (!CAS(&x, old, old+1));</code>
+    </div>
+    <div class="def">
+      <div class="icon">⌬</div>
+      <h4>File <em>descriptors</em></h4>
+      <p>Once a file descriptor is open, the kernel binds you to that <em>inode</em> — symlinks and unlinks don't matter. Replace path-based check-then-use (<code>access</code>+<code>open</code>) with <code>open</code>+<code>fstat</code>+<code>fchown</code>+<code>fchmod</code>.</p>
+      <code>fd = open(p, O_NOFOLLOW); fstat(fd, &st);</code>
+    </div>
+    <div class="def">
+      <div class="icon">⊞</div>
+      <h4>DB <em>transactions</em></h4>
+      <p>Make the entire check-and-mutate one statement, or wrap it in a transaction with row-level locks (<code>SELECT ... FOR UPDATE</code>) or serializable isolation. The database becomes responsible for ordering.</p>
+      <code>UPDATE acc SET bal=bal-80 WHERE id=1 AND bal&gt;=80;</code>
+    </div>
+    <div class="def">
+      <div class="icon">≡</div>
+      <h4><em>design</em> away the share</h4>
+      <p>The cheapest race is the one you don't have. Immutable data structures, single-writer/multi-reader patterns, message-passing actors, share-nothing parallelism. <strong>If the state isn't shared, it can't be raced.</strong></p>
+      <code>// no shared state ↔ no race possible</code>
+    </div>
+  </div>
+</section>
+
+<!-- =========== FOOTER =========== -->
+<footer>
+  <div class="wrap">
+    <div class="colophon">
+      <div>
+        <h5>// colophon</h5>
+        <p>Set in <em>Big Shoulders Display</em>, <em>Manrope</em>, <em>Petrona</em>, and <em>DM Mono</em>. The simulator is pure JavaScript — no real threads run in your browser, no kernel scheduler is involved, no actual files are touched. The interleaver is a deterministic step machine; the "races" you observe are scripted by the schedule you choose, so you can study how a particular ordering causes a particular failure.</p>
+        <div class="stamp">— race conditions · manifesto lab · plate set i–vi —</div>
+      </div>
+      <div>
+        <h5>// further reading</h5>
+        <a href="https://cwe.mitre.org/data/definitions/362.html" target="_blank" rel="noopener">CWE-362 · Race Condition</a>
+        <a href="https://cwe.mitre.org/data/definitions/367.html" target="_blank" rel="noopener">CWE-367 · TOCTOU</a>
+        <a href="https://owasp.org/www-community/vulnerabilities/Race_Conditions" target="_blank" rel="noopener">OWASP · Race Conditions</a>
+        <a href="https://man7.org/linux/man-pages/man3/mkstemp.3.html" target="_blank" rel="noopener">man 3 mkstemp</a>
+      </div>
+      <div>
+        <h5>// also in this lab</h5>
+        <a href="#anatomy">i. Four ingredients</a>
+        <a href="#lessons">ii. Six races</a>
+        <a href="#lab">iii. Field study</a>
+        <a href="#defenses">iv. Defenses</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- =================================================== -->
+<!-- ============== INTERACTIVE LOGIC ================== -->
+<!-- =================================================== -->
+<script>
+(() => {
+  'use strict';
+
+  const $  = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const rand = n => Math.floor(Math.random() * n);
+
+  const tabsRoot   = $('#modeTabs');
+  const ctrlRoot   = $('#labControls');
+  const railArea   = $('#railArea');
+  const transcript = $('#transcript');
+
+  let currentMode = 'counter';
+  let running = false;
+
+  // ============= TRANSCRIPT ============
+  function tline(text, cls='') {
+    const span = document.createElement('span');
+    span.className = 't-line';
+    if (cls) {
+      const inner = document.createElement('span');
+      inner.className = cls;
+      inner.textContent = text;
+      span.appendChild(inner);
+    } else span.textContent = text;
+    transcript.appendChild(span);
+    transcript.scrollTop = transcript.scrollHeight;
+    return span;
+  }
+  function clearTranscript() { transcript.innerHTML = ''; }
+
+  // ============= RAIL UI HELPERS ============
+  // Build the standard "two-rail + resource" layout into railArea
+  // threads = [ { id, name, sub, ops:[{kind, detail, touch, line}] }, ... ]
+  // opts.code = { a: { title, lang, lines }, b: { title, lang, lines } }   (optional)
+  function buildRails(threads, resourceLabel, resourceValue, opts = {}) {
+    railArea.innerHTML = '';
+    if (opts.code) {
+      railArea.appendChild(buildCodeDock(opts.code.a, opts.code.b));
+    }
+    const aBlock = railEl(threads[0], 'a');
+    railArea.appendChild(aBlock);
+    const resPanel = document.createElement('div');
+    resPanel.className = 'resource-panel';
+    resPanel.innerHTML = `
+      <div class="lbl">${resourceLabel}</div>
+      <div class="val" id="resVal">${resourceValue}</div>
+      <div class="meta" id="resMeta">${opts.meta || ''}</div>
+    `;
+    railArea.appendChild(resPanel);
+    const bBlock = railEl(threads[1], 'b');
+    railArea.appendChild(bBlock);
+
+    if (opts.outcome) {
+      const oc = document.createElement('div');
+      oc.className = 'outcome idle';
+      oc.id = 'outcome';
+      oc.textContent = opts.outcome;
+      railArea.appendChild(oc);
+    }
+
+    return { aBlock, bBlock, resPanel };
+  }
+
+  function buildCodeDock(aCode, bCode) {
+    const dock = document.createElement('div');
+    dock.className = 'code-dock';
+    const renderPane = (code, side) => {
+      const lines = code.lines.map((l, i) =>
+        `<div class="code-line" id="line-${side}-${i+1}"><span class="ln">${i+1}</span><span class="ld">${l}</span></div>`
+      ).join('');
+      return `
+        <div class="code-pane ${side}">
+          <div class="head">${code.title}<small>${code.lang || ''}</small></div>
+          <pre>${lines}</pre>
+        </div>`;
+    };
+    dock.innerHTML = renderPane(aCode, 'a') + renderPane(bCode, 'b');
+    return dock;
+  }
+
+  function setActiveLine(side, line) {
+    document.querySelectorAll(`.code-pane.${side} .code-line`).forEach(el => el.classList.remove('active'));
+    if (line) {
+      const el = document.getElementById(`line-${side}-${line}`);
+      if (el) el.classList.add('active');
+    }
+  }
+
+  function railEl(thread, side) {
+    const block = document.createElement('div');
+    block.className = `rail-block ${side}`;
+    block.id = `rail-${thread.id}`;
+    const locals = thread.locals || [];
+    const localsHtml = locals.length === 0
+      ? '<div class="lrow"><span class="k">—</span><span class="v" style="opacity:0.4">no scratch</span></div>'
+      : locals.map(l =>
+          `<div class="lrow"><span class="k">${l.k}</span><span class="v" id="local-${thread.id}-${cssEscape(l.k)}">${l.v}</span></div>`
+        ).join('');
+    block.innerHTML = `
+      <div class="rail-name">
+        <div class="name">${thread.name}</div>
+        <div class="stat" id="stat-${thread.id}">${thread.sub || 'idle'}</div>
+      </div>
+      <div class="rail-ops" id="ops-${thread.id}"></div>
+      <div class="locals-pane" id="locals-${thread.id}">
+        <div class="label">// locals</div>
+        ${localsHtml}
+      </div>
+    `;
+    const ops = block.querySelector('.rail-ops');
+    thread.ops.forEach((op, i) => {
+      const div = document.createElement('div');
+      div.className = `op ${side}`;
+      div.dataset.idx = i;
+      if (op.line !== undefined && op.line !== null) div.dataset.line = op.line;
+      div.innerHTML = `<span class="op-kind">${op.kind}</span>${op.detail ? `<span class="op-detail">${op.detail}</span>` : ''}`;
+      ops.appendChild(div);
+    });
+    return block;
+  }
+
+  function cssEscape(s) {
+    return String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  function setLocal(threadId, key, value, opts = {}) {
+    const el = document.getElementById(`local-${threadId}-${cssEscape(key)}`);
+    if (!el) return;
+    el.textContent = String(value);
+    if (!opts.silent) {
+      el.classList.remove('changed');
+      void el.offsetWidth;
+      el.classList.add('changed');
+    }
+  }
+
+  function activateOp(threadId, idx, side, opts={}) {
+    const ops = document.querySelectorAll(`#ops-${threadId} .op`);
+    ops.forEach(o => o.classList.remove('active','collide'));
+    if (idx >= 0 && idx < ops.length) {
+      ops[idx].classList.add('active', side);
+      if (opts.collide) ops[idx].classList.add('collide');
+      if (opts.touch) ops[idx].classList.add('touched', side);
+      // also drive code-pane line highlight
+      const ln = ops[idx].dataset.line;
+      if (ln) setActiveLine(side, parseInt(ln, 10));
+    }
+    // mark prior as done
+    for (let i = 0; i < idx; i++) ops[i].classList.add('done');
+    // mark block as active
+    document.querySelectorAll('.rail-block').forEach(b => b.classList.remove('active'));
+    const block = document.getElementById(`rail-${threadId}`);
+    if (block) block.classList.add('active');
+  }
+
+  function setStat(threadId, text) {
+    const el = document.getElementById(`stat-${threadId}`);
+    if (el) el.textContent = text;
+  }
+
+  function setResource(value, opts = {}) {
+    const v = document.getElementById('resVal');
+    const m = document.getElementById('resMeta');
+    if (!v) return;
+    v.textContent = value;
+    v.className = 'val' + (opts.bad ? ' bad' : opts.ok ? ' ok' : '');
+    if (m && opts.meta !== undefined) m.textContent = opts.meta;
+    const panel = $('.resource-panel');
+    if (panel) {
+      panel.classList.remove('flash');
+      void panel.offsetWidth;
+      panel.classList.add('flash');
+    }
+  }
+
+  function setOutcome(text, kind='idle') {
+    const oc = $('#outcome');
+    if (!oc) return;
+    oc.className = `outcome ${kind}`;
+    oc.textContent = text;
+  }
+
+  // ============= TRACE RECORDER ============
+  // Each compute() emits a list of "steps", each step a group of events
+  // that should be applied together when the player advances by 1.
+  function makeRecorder() {
+    const steps = [{ events: [] }];
+    const cur = () => steps[steps.length - 1];
+    return {
+      log:      (text, cls) => cur().events.push({ type:'log', text:text||'', cls:cls||'' }),
+      activate: (threadId, opIdx, side, opts={}) => cur().events.push({ type:'activate', threadId, opIdx, side, opts }),
+      stat:     (threadId, text) => cur().events.push({ type:'stat', threadId, text }),
+      resource: (val, opts={}) => cur().events.push({ type:'resource', val, opts }),
+      outcome:  (text, kind='idle') => cur().events.push({ type:'outcome', text, kind }),
+      local:    (threadId, key, value) => cur().events.push({ type:'local', threadId, key, value }),
+      step:     () => steps.push({ events: [] }),
+      finish:   () => {
+        while (steps.length && steps[steps.length-1].events.length === 0) steps.pop();
+        return steps;
+      },
+    };
+  }
+
+  // ============= PLAYER ============
+  // Owns the trace + currentStep, drives playback forward/back/play/pause/reset.
+  const Player = {
+    trace: [],
+    currentStep: -1,
+    playing: false,
+
+    load(trace) {
+      this.trace = trace;
+      this.currentStep = -1;
+      this.updateUI();
+    },
+
+    applyEvents(events, silent) {
+      for (const e of events) {
+        switch (e.type) {
+          case 'activate': activateOp(e.threadId, e.opIdx, e.side, e.opts || {}); break;
+          case 'stat':     setStat(e.threadId, e.text); break;
+          case 'log':      tline(e.text, e.cls); break;
+          case 'resource':
+            if (silent) {
+              const v = document.getElementById('resVal');
+              const m = document.getElementById('resMeta');
+              if (v) {
+                v.textContent = e.val;
+                v.className = 'val' + (e.opts.bad ? ' bad' : e.opts.ok ? ' ok' : '');
+              }
+              if (m && e.opts.meta !== undefined) m.textContent = e.opts.meta;
+            } else {
+              setResource(e.val, e.opts);
+            }
+            break;
+          case 'outcome':  setOutcome(e.text, e.kind); break;
+          case 'local':    setLocal(e.threadId, e.key, e.value, { silent }); break;
+        }
+      }
+    },
+
+    next() {
+      if (this.currentStep >= this.trace.length - 1) return false;
+      this.currentStep++;
+      this.applyEvents(this.trace[this.currentStep].events, false);
+      this.updateUI();
+      return true;
+    },
+
+    prev() {
+      if (this.currentStep < 0) return false;
+      this.currentStep--;
+      this.rebuild();
+      return true;
+    },
+
+    rebuild() {
+      // re-establish initial visual state
+      if (MODES[currentMode].setup) MODES[currentMode].setup();
+      clearTranscript();
+      const total = this.trace.length;
+      tline(`[ field-study · ${MODES[currentMode].label} · scrubbed to step ${this.currentStep + 1} / ${total} ]`, 'info');
+      tline('', '');
+      for (let i = 0; i <= this.currentStep; i++) {
+        this.applyEvents(this.trace[i].events, true /* silent — no flash */);
+      }
+      this.updateUI();
+    },
+
+    async play() {
+      if (this.playing) return;
+      // if no trace or at end, recompute from current settings
+      if (this.trace.length === 0 || this.currentStep >= this.trace.length - 1) {
+        this.reset(true /* silentHeader */);
+        const trace = MODES[currentMode].compute();
+        this.load(trace);
+        clearTranscript();
+        tline(`[ field-study · ${MODES[currentMode].label} · running ]`, 'info');
+        tline('', '');
+      }
+      if (this.trace.length === 0) return;
+      this.playing = true;
+      this.updateUI();
+      while (this.playing && this.currentStep < this.trace.length - 1) {
+        const speed = parseInt(($('#ctrlSpeed') || {}).value || 240, 10);
+        await sleep(speed);
+        if (!this.playing) break;
+        this.next();
+      }
+      this.playing = false;
+      this.updateUI();
+    },
+
+    pause() {
+      this.playing = false;
+      this.updateUI();
+    },
+
+    toggle() {
+      if (this.playing) this.pause();
+      else this.play();
+    },
+
+    reset(silentHeader=false) {
+      this.playing = false;
+      this.currentStep = -1;
+      this.trace = [];
+      if (MODES[currentMode] && MODES[currentMode].setup) MODES[currentMode].setup();
+      clearTranscript();
+      if (!silentHeader) {
+        tline(`[ field-study · ${MODES[currentMode].label} · ready ]`, 'info');
+        tline(`[ ▶ play  ·  ⏭ step forward  ·  ⏮ step back  ·  ⏹ reset ]`, 'dim');
+        tline('', '');
+      }
+      this.updateUI();
+    },
+
+    stepForwardOnce() {
+      this.pause();
+      // if no trace yet, compute it and step into step 1
+      if (this.trace.length === 0) {
+        const trace = MODES[currentMode].compute();
+        this.load(trace);
+        clearTranscript();
+        tline(`[ field-study · ${MODES[currentMode].label} · stepping ]`, 'info');
+        tline('', '');
+      }
+      this.next();
+    },
+
+    updateUI() {
+      const playBtn  = $('#ctrlPlay');
+      const prevBtn  = $('#ctrlPrev');
+      const nextBtn  = $('#ctrlNext');
+      const display  = $('#stepDisplay');
+      if (!playBtn) return;
+      playBtn.textContent = this.playing ? '⏸' : '▶';
+      playBtn.title       = this.playing ? 'Pause' : 'Play';
+      playBtn.classList.toggle('playing', this.playing);
+      prevBtn.disabled = this.currentStep < 0;
+      const atEnd = this.trace.length > 0 && this.currentStep >= this.trace.length - 1;
+      nextBtn.disabled = atEnd && this.trace.length > 0;
+      const t = this.trace.length;
+      const c = this.currentStep + 1;
+      display.innerHTML = t === 0
+        ? 'step <strong>—</strong> / <strong>—</strong>'
+        : `step <strong>${c}</strong> / <strong>${t}</strong>`;
+    },
+  };
+
+  function wireTransport() {
+    $('#ctrlReset').onclick = () => Player.reset();
+    $('#ctrlPrev').onclick  = () => { Player.pause(); Player.prev(); };
+    $('#ctrlNext').onclick  = () => Player.stepForwardOnce();
+    $('#ctrlPlay').onclick  = () => Player.toggle();
+  }
+
+  // ============= EXPLAINER ============
+  const EXPLAIN = {
+    counter: {
+      concept: {
+        header: 'The attack',
+        paragraph: `When two threads concurrently execute <code>counter++</code> without synchronisation, the operation isn't atomic — it compiles to <em>READ → ADD → WRITE</em>. Threads interleave such that both read the same value, both add 1, and both write the same result. Two increments collapse into one. The result is a counter lower than it should be — silently. <em>No exception, no crash, just a wrong number.</em>`,
+        stepsHeader: 'How the attacker exploits it',
+        steps: [
+          `Find a counter or other shared integer accessed by multiple threads / requests / processes without a lock or atomic instruction.`,
+          `Trigger many concurrent operations: thread fan-out, parallel HTTP requests, multi-process workers — anything that produces overlap.`,
+          `Some operations get "lost". The program's invariant (count of all operations) is violated.`,
+          `In the wild: bypassing a per-user rate-limit (your 1-of-1 limit lets you in 5 times); double-claiming an in-app reward; double-voting in elections; double-redeeming a coupon; double-spending a cryptocurrency UTXO before the block confirms.`,
+          `Mitigation in practice: a mutex around the increment, an atomic <code>fetch_add</code>, or a database <code>UPDATE ... SET counter=counter+1</code> which the engine serialises for you.`,
+        ],
+      },
+      knobs: [
+        `<strong>Iterations per thread</strong> — how many times each thread runs the increment loop. More iterations = more chances to collide.`,
+        `<strong>Schedule</strong> — <code>random</code> = realistic noise; <code>adversarial</code> = forces a worst-case interleave at every step (every read collides).`,
+        `<strong>Synchronisation</strong> — <code>off</code> = naive race; <code>mutex</code> = serialise the critical section; <code>atomic</code> = single-instruction increment.`,
+      ],
+      watch: [
+        `Each op card lights up red for thread A, yellow for thread B as the scheduler picks them.`,
+        `Op cards turn magenta on a collision step (both threads recently touched the resource).`,
+        `Final counter value vs the expected total — the difference is the count of lost updates.`,
+      ],
+    },
+
+    toctou: {
+      concept: {
+        header: 'The attack',
+        paragraph: `A privileged process verifies a property of a file (its owner, permissions, or existence) and then operates on it — but the two operations are not atomic. Between the check (<code>access</code>, <code>stat</code>) and the use (<code>open</code>, <code>chmod</code>), an attacker swaps the path or replaces the file. <strong>The check told the truth at check-time. By use-time, the truth had changed.</strong> The privileged process applies its action to the wrong file.`,
+        stepsHeader: 'How the attacker exploits it',
+        steps: [
+          `Find a setuid binary or privileged daemon that does a check-then-use sequence on a path the attacker can influence (a temp file, a user-owned input file, an argv path).`,
+          `Prepare two files: a "good" file that satisfies the check, and a "bad" target (often <code>/etc/passwd</code> or <code>/etc/shadow</code>).`,
+          `Run an attacker loop in the background that continuously swaps the path: <code>unlink</code> the good file and <code>symlink</code> to the bad one, in a tight cycle.`,
+          `Trigger the privileged operation. Tune the attacker's loop so that with high probability, the swap happens between the check and the use.`,
+          `On a hit: the privileged process opened the attacker's chosen target. <code>write</code> goes to <code>/etc/passwd</code>; <code>chmod 777</code> goes to a sensitive system file; <code>fchown</code> hands a root-owned file to the attacker.`,
+          `Mitigation: never re-resolve the path. Open once, then operate on the file descriptor — <code>fstat</code>, <code>fchmod</code>, <code>fchown</code>. Add <code>O_NOFOLLOW</code> to refuse symlinks. Use <code>openat</code> with directory FDs to avoid relative-path races.`,
+        ],
+      },
+      knobs: [
+        `<strong>Privileged delay</strong> — how long between <code>stat</code> and <code>open</code> in the simulator. Longer = bigger window = more attacker hits.`,
+        `<strong>Attacker speed</strong> — how fast the swap loop runs. Faster = more swaps per privileged operation = more wins.`,
+        `<strong>Mitigation</strong> — <code>off</code> = path-based check-then-use (vulnerable); <code>fd</code> = open-once-and-operate-on-fd (safe).`,
+      ],
+      watch: [
+        `Privileged thread (red) advances slowly through stat → delay → open → write.`,
+        `Attacker thread (yellow) repeatedly fires unlink + symlink — watch its op cards cycle.`,
+        `The shared resource panel shows what file the privileged process actually wrote to. If it's <code>/etc/passwd</code>, the attacker won.`,
+      ],
+    },
+
+    bank: {
+      concept: {
+        header: 'The attack',
+        paragraph: `A banking-style state mutation: <em>read balance → check balance ≥ amount → balance := balance − amount → write balance</em>. Two concurrent withdrawals can both pass the check (both saw the unmodified balance), both subtract, both write — and the account is overdrawn beyond what the check should have allowed. The same pattern shows up everywhere: redeem-coupon, claim-reward, transfer-points, decrement-stock, post-only-once.`,
+        stepsHeader: 'How the attacker exploits it',
+        steps: [
+          `Identify an endpoint that does a check-then-mutate against shared state without a transaction or row lock — typical signs are separate <code>SELECT</code> and <code>UPDATE</code> calls in the handler.`,
+          `Discover the request that exercises this handler (a withdrawal, a coupon redemption, a "claim daily reward").`,
+          `Fire many copies of that request <em>in parallel</em>, not sequentially — using HTTP/2 multiplexing, async clients, or simply 50 sockets in a tight loop.`,
+          `On the server, several workers run the handler concurrently. They all see the pre-modification balance, all pass the check, all execute the mutation.`,
+          `The final state violates the invariant the check was supposed to protect: balance goes negative, multiple coupons redeemed, multiple gift-card refunds processed for one card.`,
+          `Mitigation: collapse check and mutate into one atomic statement — <code>UPDATE acc SET bal=bal-X WHERE id=? AND bal&gt;=X</code>. Use <code>RETURNING</code> or <code>rows_affected</code> to know whether your operation succeeded; only credit the user when it did.`,
+        ],
+      },
+      knobs: [
+        `<strong>Initial balance</strong> — the starting amount.`,
+        `<strong>Withdrawal amount</strong> — what each parallel request asks for.`,
+        `<strong>Concurrent requests</strong> — how many parallel withdraws (more = more chances to overlap).`,
+        `<strong>Synchronisation</strong> — <code>off</code> = naive check-then-mutate; <code>tx</code> = atomic <code>UPDATE…WHERE bal&gt;=X</code>.`,
+      ],
+      watch: [
+        `Each request's ops fire in interleaved order; balance updates after each WRITE.`,
+        `Final balance vs invariant: <code>balance ≥ 0 AND only N withdrawals where N×amount ≤ initial</code>.`,
+        `Outcome banner turns magenta on overdraft, green on safe completion.`,
+      ],
+    },
+
+    symlink: {
+      concept: {
+        header: 'The attack',
+        paragraph: `A privileged program creates or writes a working file at a path the attacker can predict — often something like <code>/tmp/&lt;name&gt;.tmp</code> or <code>/var/run/&lt;pid&gt;</code>. The attacker, in a tight loop, deletes that path and replaces it with a <strong>symbolic link</strong> pointing at a sensitive file (<code>/etc/passwd</code>, <code>/etc/shadow</code>, an SUID binary's config). When the privileged process opens the path, the kernel follows the symlink and the privileged write lands on the attacker's chosen target.`,
+        stepsHeader: 'How the attacker exploits it',
+        steps: [
+          `Find a setuid or root daemon that creates files with <strong>predictable names</strong> in a directory the attacker can write to (<code>/tmp</code>, <code>/var/tmp</code>, sometimes shared application caches).`,
+          `Pick a target file the privileged process will write content to but should never overwrite (<code>/etc/shadow</code>, <code>/etc/passwd</code>, <code>/root/.ssh/authorized_keys</code>).`,
+          `Run an attacker loop: <code>while true: unlink(predictable_path); symlink(target, predictable_path); done</code>.`,
+          `Trigger the privileged action. The race window between the program's path resolution and its <code>open</code> is what the loop must hit.`,
+          `On a hit: the privileged write goes through the symlink and lands on the target. Adding "attacker:0:0:" to <code>/etc/passwd</code> creates a UID-0 account.`,
+          `Mitigation: use <code>mkstemp(3)</code> for unpredictable names; pass <code>O_NOFOLLOW</code> when opening; use <code>O_CREAT|O_EXCL</code> to refuse pre-existing files; prefer <code>openat</code> against a private directory FD.`,
+        ],
+      },
+      knobs: [
+        `<strong>Target file</strong> — what the attacker's symlink points at.`,
+        `<strong>Privileged delay</strong> — gap between path decision and <code>open</code>.`,
+        `<strong>Mitigation</strong> — <code>off</code> = predictable name + open-by-path; <code>safe</code> = <code>mkstemp</code> + <code>O_NOFOLLOW</code> + <code>O_EXCL</code>.`,
+      ],
+      watch: [
+        `The shared "filesystem" panel shows two paths: the temp file and the real target. The temp's "→ symlink" tag flips when the attacker runs.`,
+        `When the privileged write fires, the contents land in whichever file the symlink resolved to at that moment.`,
+        `Outcome banner indicates whether <code>/etc/passwd</code> was clobbered.`,
+      ],
+    },
+  };
+
+  function renderExplainer(mode) {
+    const e = EXPLAIN[mode];
+    if (!e) return;
+    const c = e.concept;
+    const html = `
+      <div class="ex-col">
+        <h6>${c.header || 'The attack'}</h6>
+        <p>${c.paragraph}</p>
+        <h6 class="ex-sub">${c.stepsHeader || 'How the attacker exploits it'}</h6>
+        <ol class="ex-steps">${c.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+      </div>
+      <div class="ex-col">
+        <h6>Your knobs</h6>
+        <ul>${e.knobs.map(k => `<li>${k}</li>`).join('')}</ul>
+      </div>
+      <div class="ex-col">
+        <h6>What to watch</h6>
+        <ul>${e.watch.map(w => `<li>${w}</li>`).join('')}</ul>
+      </div>`;
+    document.getElementById('explainer').innerHTML = html;
+  }
+
+  // ============= MODES ============
+
+  // ---------- MODE 1 : COUNTER RACE ----------
+  const M_COUNTER = {
+    label: 'lost-update counter',
+    controls: () => `
+      <h5>Lost <em>Update</em></h5>
+      <div class="desc">Two threads each increment a shared counter N times. With no lock, increments collide and silently drop.</div>
+      <div class="ctrl">
+        <label>// iterations per thread</label>
+        <input id="c_iters" type="number" min="2" max="20" value="6">
+      </div>
+      <div class="ctrl">
+        <label>// schedule</label>
+        <div class="switch two" id="c_sched">
+          <button data-v="random" class="on">random</button>
+          <button data-v="adv">adversarial</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label>// synchronisation</label>
+        <div class="switch three" id="c_sync">
+          <button data-v="off" class="on">off (race)</button>
+          <button data-v="mutex">mutex</button>
+          <button data-v="atomic" class="safe">atomic</button>
+        </div>
+      </div>
+    `,
+    setup: () => {
+      const iters = parseInt(($('#c_iters')||{}).value || 6, 10);
+      const sync  = ($('#c_sync .on') || {}).dataset?.v || 'off';
+
+      let ops, codeLines, codeLang;
+      if (sync === 'atomic') {
+        // 1 op per iter — single uninterruptible instruction
+        ops = Array.from({length: iters}, () => ({ kind: 'ATOMIC', detail: '+1', line: 3 }));
+        codeLang = 'c · atomic';
+        codeLines = [
+          '<span class="kw">void*</span> <span class="fn">worker</span>(<span class="kw">void</span> *arg) {',
+          '    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; ITERS; i++) {',
+          '        <span class="fn">__atomic_fetch_add</span>(&counter, <span class="num">1</span>,',
+          '                           __ATOMIC_SEQ_CST);  <span class="com">// uninterruptible</span>',
+          '    }',
+          '    <span class="kw">return</span> <span class="kw">NULL</span>;',
+          '}',
+        ];
+      } else if (sync === 'mutex') {
+        ops = [];
+        for (let i = 0; i < iters; i++) {
+          ops.push({ kind: 'READ',  detail: 't=c', line: 4 });
+          ops.push({ kind: '+1',    detail: 't+1', line: 5 });
+          ops.push({ kind: 'WRITE', detail: 'c=t', line: 6 });
+        }
+        codeLang = 'c · mutex';
+        codeLines = [
+          '<span class="kw">void*</span> <span class="fn">worker</span>(<span class="kw">void</span> *arg) {',
+          '    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; ITERS; i++) {',
+          '        <span class="fn">pthread_mutex_lock</span>(&lock);',
+          '        <span class="kw">int</span> t = counter;       <span class="com">// READ</span>',
+          '        t = t + <span class="num">1</span>;             <span class="com">// ADD</span>',
+          '        counter = t;           <span class="com">// WRITE</span>',
+          '        <span class="fn">pthread_mutex_unlock</span>(&lock);',
+          '    }',
+          '    <span class="kw">return</span> <span class="kw">NULL</span>;',
+          '}',
+        ];
+      } else {
+        ops = [];
+        for (let i = 0; i < iters; i++) {
+          ops.push({ kind: 'READ',  detail: 't=c', line: 3 });
+          ops.push({ kind: '+1',    detail: 't+1', line: 4 });
+          ops.push({ kind: 'WRITE', detail: 'c=t', line: 5 });
+        }
+        codeLang = 'c · race';
+        codeLines = [
+          '<span class="kw">void*</span> <span class="fn">worker</span>(<span class="kw">void</span> *arg) {',
+          '    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; ITERS; i++) {',
+          '        <span class="kw">int</span> t = counter;       <span class="com">// READ</span>',
+          '        t = t + <span class="num">1</span>;             <span class="com">// ADD</span>',
+          '        counter = t;           <span class="com">// WRITE</span>',
+          '    }',
+          '    <span class="kw">return</span> <span class="kw">NULL</span>;',
+          '}',
+        ];
+      }
+
+      const codeA = { title: 'Thread A', lang: codeLang, lines: codeLines };
+      const codeB = { title: 'Thread B', lang: codeLang, lines: codeLines };
+
+      const initLocals = sync === 'atomic'
+        ? [ { k: 'iter',  v: '0/' + iters }, { k: 'op',    v: 'idle'      } ]
+        : [ { k: 't',     v: '—'           }, { k: 'iter',  v: '0/' + iters }, { k: 'phase', v: 'idle' } ];
+
+      const a = { id: 'a', name: 'A', sub: 'idle', ops: JSON.parse(JSON.stringify(ops)), locals: JSON.parse(JSON.stringify(initLocals)) };
+      const b = { id: 'b', name: 'B', sub: 'idle', ops: JSON.parse(JSON.stringify(ops)), locals: JSON.parse(JSON.stringify(initLocals)) };
+      buildRails([a, b], 'shared counter', '0', {
+        meta: `expected = 2 × ${iters} = ${2*iters}`,
+        outcome: 'awaiting run',
+        code: { a: codeA, b: codeB },
+      });
+    },
+    onMount: () => {
+      $$('#c_sched button').forEach(b => b.addEventListener('click', () => {
+        $$('#c_sched button').forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+        Player.reset();
+      }));
+      $$('#c_sync button').forEach(b => b.addEventListener('click', () => {
+        $$('#c_sync button').forEach(x => x.classList.remove('on','safe'));
+        b.classList.add('on');
+        if (b.dataset.v === 'atomic') b.classList.add('safe');
+        Player.reset();
+      }));
+      $('#c_iters').addEventListener('input', () => Player.reset());
+    },
+    compute: () => {
+      const iters = parseInt($('#c_iters').value, 10);
+      const sched = $('#c_sched .on').dataset.v;
+      const sync  = $('#c_sync .on').dataset.v;
+      const r = makeRecorder();
+      r.log(`> spawn 2 threads, each runs counter++ × ${iters}  ·  schedule=${sched}  ·  sync=${sync}`, 'info');
+
+      let counter = 0;
+      const opsPerIter = sync === 'atomic' ? 1 : 3;
+      const totalOps = iters * opsPerIter;
+      const threads = [
+        { id: 'a', pc: 0, t: 0, holding: false, side: 'a' },
+        { id: 'b', pc: 0, t: 0, holding: false, side: 'b' },
+      ];
+
+      const pick = (alive) => {
+        if (sync === 'mutex') {
+          const blocked = alive.filter(t => alive.some(o => o.id !== t.id && o.holding));
+          const free = alive.filter(t => !blocked.includes(t));
+          const candidates = free.length ? free : alive;
+          return candidates[rand(candidates.length)];
+        }
+        if (sched === 'adv' && opsPerIter === 3) {
+          const between = alive.find(t => t.pc % 3 !== 0);
+          const aboutToRead = alive.find(t => t.pc % 3 === 0);
+          if (between && aboutToRead && between.id !== aboutToRead.id) return aboutToRead;
+        }
+        return alive[rand(alive.length)];
+      };
+
+      while (true) {
+        const alive = threads.filter(t => t.pc < totalOps);
+        if (!alive.length) break;
+        const t = pick(alive);
+        const opIdx = t.pc;
+        const iter  = Math.floor(opIdx / opsPerIter);
+
+        r.step();
+        r.activate(t.id, opIdx, t.side);
+        r.stat(t.id, `op ${opIdx+1}/${totalOps}  ·  iter ${iter+1}`);
+
+        if (sync === 'atomic') {
+          counter++;
+          r.log(`  thread ${t.id.toUpperCase()} ▸ atomic_fetch_add(&counter, 1)  → counter = ${counter}`, t.side === 'a' ? 'ta' : 'tb');
+          r.local(t.id, 'iter', `${iter+1}/${iters}`);
+          r.local(t.id, 'op',   'fetch_add');
+          r.resource(counter, { meta: `expected = ${2*iters}` });
+        } else {
+          const phase = opIdx % 3;
+          if (phase === 0) {
+            if (sync === 'mutex') t.holding = true;
+            t.t = counter;
+            r.log(`  thread ${t.id.toUpperCase()} ▸ READ counter  → t=${t.t}`, t.side === 'a' ? 'ta' : 'tb');
+            r.local(t.id, 't',     t.t);
+            r.local(t.id, 'iter',  `${iter+1}/${iters}`);
+            r.local(t.id, 'phase', 'READ');
+          } else if (phase === 1) {
+            t.t = t.t + 1;
+            r.log(`  thread ${t.id.toUpperCase()} ▸ ADD t+1  → t=${t.t}`, t.side === 'a' ? 'ta' : 'tb');
+            r.local(t.id, 't',     t.t);
+            r.local(t.id, 'phase', 'ADD');
+          } else {
+            const expected = t.t;
+            const wouldBe  = counter + 1;
+            counter = expected;
+            if (expected !== wouldBe && sync === 'off') {
+              r.log(`  thread ${t.id.toUpperCase()} ▸ WRITE counter ← ${expected}   ✗ LOST UPDATE (would-be ${wouldBe})`, 'bad');
+            } else {
+              r.log(`  thread ${t.id.toUpperCase()} ▸ WRITE counter ← ${expected}`, t.side === 'a' ? 'ta' : 'tb');
+            }
+            if (sync === 'mutex') t.holding = false;
+            r.local(t.id, 'phase', 'WRITE');
+            r.resource(counter, { meta: `expected = ${2*iters}` });
+          }
+        }
+        t.pc++;
+      }
+
+      // final summary as last step
+      const expected = 2 * iters;
+      r.step();
+      r.log('');
+      r.log(`; final counter = ${counter}  ·  expected = ${expected}  ·  lost updates = ${expected - counter}`, counter === expected ? 'ok' : 'bad');
+      if (counter === expected) {
+        r.outcome(`✓ invariant held · counter = ${counter}`, 'ok');
+        r.resource(counter, { ok: true, meta: `final = ${counter} (correct)` });
+      } else {
+        r.outcome(`✗ ${expected - counter} update(s) lost · counter = ${counter}`, 'bad');
+        r.resource(counter, { bad: true, meta: `final = ${counter} (lost ${expected - counter})` });
+      }
+      return r.finish();
+    },
+  };
+
+  // ---------- MODE 2 : TOCTOU FILE ----------
+  const M_TOCTOU = {
+    label: 'TOCTOU file race',
+    controls: () => `
+      <h5>TOCTOU <em>File</em></h5>
+      <div class="desc">A privileged process checks a file then opens it. Between check and open, the attacker swaps the file for a symlink to a sensitive target.</div>
+      <div class="ctrl">
+        <label>// privileged delay (steps between check and open)</label>
+        <input id="t_delay" type="number" min="1" max="8" value="3">
+      </div>
+      <div class="ctrl">
+        <label>// attacker swap rate</label>
+        <div class="switch two" id="t_speed">
+          <button data-v="slow">slow (no race)</button>
+          <button data-v="fast" class="on">fast (looped)</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label>// mitigation</label>
+        <div class="switch two" id="t_mit">
+          <button data-v="off" class="on">off (vulnerable)</button>
+          <button data-v="fd" class="safe">use fd (safe)</button>
+        </div>
+      </div>
+    `,
+    setup: () => {
+      const delay = parseInt(($('#t_delay')||{}).value || 3, 10);
+      const mit   = ($('#t_mit .on') || {}).dataset?.v || 'off';
+
+      let privOps, codeAlines, codeAlang;
+      if (mit === 'fd') {
+        // safe variant — open once, operate on fd
+        privOps = [
+          { kind: 'OPEN',  detail: 'NOFOLLOW', line: 3 },
+          { kind: 'FSTAT', detail: 'on fd',    line: 5 },
+          { kind: 'CHECK', detail: 'safe?',    line: 6 },
+          { kind: 'WRITE', detail: 'fd',       line: 8 },
+          { kind: 'CLOSE', detail: 'fd',       line: 9 },
+        ];
+        codeAlang = 'c · setuid (safe)';
+        codeAlines = [
+          '<span class="kw">int</span> <span class="fn">main</span>() {',
+          '    <span class="com">// open once, then operate on the fd — no re-resolve</span>',
+          '    <span class="kw">int</span> fd = <span class="fn">open</span>(<span class="str">"/tmp/x"</span>, O_WRONLY | O_NOFOLLOW);',
+          '    <span class="kw">if</span> (fd &lt; <span class="num">0</span>) <span class="fn">exit</span>(<span class="num">1</span>);',
+          '    <span class="kw">struct</span> stat s; <span class="fn">fstat</span>(fd, &amp;s);   <span class="com">// FSTAT (inode-bound)</span>',
+          '    <span class="kw">if</span> (!<span class="fn">is_safe</span>(&amp;s)) <span class="fn">exit</span>(<span class="num">1</span>);  <span class="com">// CHECK</span>',
+          '    <span class="com">// fd points at the inode that fstat verified.</span>',
+          '    <span class="fn">write</span>(fd, log, n);             <span class="com">// WRITE</span>',
+          '    <span class="fn">close</span>(fd);                     <span class="com">// CLOSE</span>',
+          '    <span class="kw">return</span> <span class="num">0</span>;',
+          '}',
+        ];
+      } else {
+        // vulnerable variant — check by path, then open by path
+        const waitOps = Array.from({length: delay}, (_, i) => ({ kind: '·', detail: `wait ${i+1}`, line: 5 }));
+        privOps = [
+          { kind: 'STAT',  detail: '/tmp/x', line: 3 },
+          { kind: 'CHECK', detail: 'safe?',  line: 4 },
+          ...waitOps,
+          { kind: 'OPEN',  detail: '/tmp/x', line: 6 },
+          { kind: 'WRITE', detail: 'log',    line: 7 },
+          { kind: 'CLOSE', detail: 'fd',     line: 8 },
+        ];
+        codeAlang = 'c · setuid (vulnerable)';
+        codeAlines = [
+          '<span class="kw">int</span> <span class="fn">main</span>() {',
+          '    <span class="kw">char</span> *path = <span class="str">"/tmp/x"</span>;',
+          '    <span class="kw">if</span> (<span class="fn">access</span>(path, W_OK) != <span class="num">0</span>)  <span class="com">// STAT</span>',
+          '        <span class="fn">exit</span>(<span class="num">1</span>);                       <span class="com">// CHECK</span>',
+          '    <span class="com">/* business logic ... TOCTOU window */</span>',
+          '    <span class="kw">int</span> fd = <span class="fn">open</span>(path, O_WRONLY);    <span class="com">// OPEN — re-resolves path!</span>',
+          '    <span class="fn">write</span>(fd, log, n);                  <span class="com">// WRITE</span>',
+          '    <span class="fn">close</span>(fd);                          <span class="com">// CLOSE</span>',
+          '    <span class="kw">return</span> <span class="num">0</span>;',
+          '}',
+        ];
+      }
+
+      const cycles = 3;
+      const atkOps = [];
+      for (let i = 0; i < cycles; i++) {
+        atkOps.push({ kind: 'UNLINK',  detail: '/tmp/x',    line: 2 });
+        atkOps.push({ kind: 'SYMLINK', detail: '→ passwd',  line: 3 });
+      }
+      const codeBlines = [
+        '<span class="com"># unprivileged attacker — tight loop</span>',
+        '<span class="kw">while</span> <span class="kw">true</span>; <span class="kw">do</span>',
+        '    <span class="fn">rm</span> -f <span class="str">/tmp/x</span>',
+        '    <span class="fn">ln</span> -s <span class="str">/etc/passwd</span> <span class="str">/tmp/x</span>',
+        '<span class="kw">done</span>',
+      ];
+
+      const privLocals = mit === 'fd'
+        ? [
+            { k: 'path', v: '/tmp/x' },
+            { k: 'fd',   v: '—'      },
+            { k: 'kind', v: '—'      },
+            { k: 'safe', v: '—'      },
+          ]
+        : [
+            { k: 'path', v: '/tmp/x' },
+            { k: 'kind', v: '—'      },
+            { k: 'safe', v: '—'      },
+            { k: 'fd',   v: '—'      },
+          ];
+      const atkLocals = [
+        { k: 'iter', v: '0' },
+        { k: 'last', v: '—' },
+      ];
+
+      const priv = { id: 'a', name: 'PRIV', sub: 'root setuid', ops: privOps,  locals: privLocals };
+      const atk  = { id: 'b', name: 'ATTK', sub: 'unpriv user', ops: atkOps,   locals: atkLocals  };
+      buildRails([priv, atk], 'filesystem state', '/tmp/x → (regular)', {
+        meta: `target if hijacked: /etc/passwd`,
+        outcome: 'awaiting run',
+        code: {
+          a: { title: 'Privileged process', lang: codeAlang, lines: codeAlines },
+          b: { title: 'Attacker', lang: 'sh · loop', lines: codeBlines },
+        },
+      });
+    },
+    onMount: () => {
+      $$('#t_speed button').forEach(b => b.addEventListener('click', () => {
+        $$('#t_speed button').forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+        Player.reset();
+      }));
+      $$('#t_mit button').forEach(b => b.addEventListener('click', () => {
+        $$('#t_mit button').forEach(x => x.classList.remove('on','safe'));
+        b.classList.add('on');
+        if (b.dataset.v === 'fd') b.classList.add('safe');
+        Player.reset();
+      }));
+      $('#t_delay').addEventListener('input', () => Player.reset());
+    },
+    compute: () => {
+      const delay = parseInt($('#t_delay').value, 10);
+      const fast  = $('#t_speed .on').dataset.v === 'fast';
+      const mit   = $('#t_mit .on').dataset.v;
+      const r = makeRecorder();
+
+      r.log(`> privileged process opens /tmp/x  ·  delay=${delay}  ·  attacker=${fast ? 'fast' : 'slow'}  ·  mitigation=${mit}`, 'info');
+
+      let fs = { kind: 'regular' };  // /tmp/x state
+      let attackerHit = false;
+
+      const privSeq = mit === 'fd'
+        ? ['OPEN','FSTAT','CHECK','WRITE','CLOSE']
+        : ['STAT','CHECK', ...Array.from({length: delay}, ()=>'WAIT'), 'OPEN','WRITE','CLOSE'];
+
+      let atkPC = 0;
+      let opIdxA = 0; let opIdxB = 0;
+      const cycles = fast ? 4 : 1;
+
+      let stopped = false;
+      let atkIter = 0;
+      for (let privPC = 0; privPC < privSeq.length && !stopped; privPC++) {
+        const op = privSeq[privPC];
+
+        r.step();
+        r.activate('a', opIdxA, 'a');
+        r.stat('a', `op: ${op}`);
+
+        if (op === 'STAT') {
+          r.log(`  PRIV ▸ stat("/tmp/x")  → kind=${fs.kind}`, 'ta');
+          r.local('a', 'kind', fs.kind);
+        } else if (op === 'CHECK') {
+          r.log(`  PRIV ▸ is_safe?  ✓  (kind was ${fs.kind} at check time)`, 'ta');
+          r.local('a', 'safe', '✓ (stale)');
+        } else if (op === 'WAIT') {
+          r.log(`  PRIV ▸ ··· (delay window — attacker has time to swap)`, 'dim');
+          if (fast && atkPC < cycles * 2) {
+            // attacker UNLINK
+            r.step();
+            r.activate('b', opIdxB, 'b');
+            r.stat('b', 'op: UNLINK');
+            r.log(`  ATTK ▸ unlink("/tmp/x")`, 'tb');
+            fs = { kind: 'absent' };
+            atkIter++;
+            r.local('b', 'iter', atkIter);
+            r.local('b', 'last', 'unlink');
+            r.resource('/tmp/x → (deleted)', { meta: 'target if hijacked: /etc/passwd' });
+            opIdxB++; atkPC++;
+            // attacker SYMLINK
+            r.step();
+            r.activate('b', opIdxB, 'b');
+            r.stat('b', 'op: SYMLINK');
+            r.log(`  ATTK ▸ symlink("/etc/passwd", "/tmp/x")`, 'tb');
+            fs = { kind: 'symlink', target: '/etc/passwd' };
+            r.local('b', 'last', '→ passwd');
+            r.resource('/tmp/x → SYMLINK → /etc/passwd', { meta: 'target if hijacked: /etc/passwd' });
+            opIdxB++; atkPC++;
+          }
+        } else if (op === 'OPEN') {
+          if (mit === 'fd') {
+            if (fs.kind === 'symlink') {
+              r.log(`  PRIV ▸ open("/tmp/x", O_NOFOLLOW)  → ELOOP — refused`, 'ok');
+              r.local('a', 'fd', 'ELOOP');
+              stopped = true;
+            } else if (fs.kind === 'absent') {
+              r.log(`  PRIV ▸ open("/tmp/x", O_NOFOLLOW)  → ENOENT`, 'ok');
+              r.local('a', 'fd', 'ENOENT');
+              stopped = true;
+            } else {
+              r.log(`  PRIV ▸ open("/tmp/x", O_NOFOLLOW)  → fd=3`, 'ta');
+              r.local('a', 'fd', '3');
+              r.local('a', 'kind', fs.kind);
+            }
+          } else {
+            if (fs.kind === 'symlink') {
+              r.log(`  PRIV ▸ open("/tmp/x") → kernel follows symlink → fd=3 (now points at ${fs.target})`, 'bad');
+              r.local('a', 'fd', '3 → passwd!');
+              attackerHit = true;
+            } else if (fs.kind === 'absent') {
+              r.log(`  PRIV ▸ open("/tmp/x", O_CREAT) → fd=3 (created new file)`, 'ta');
+              r.local('a', 'fd', '3 (new)');
+            } else {
+              r.log(`  PRIV ▸ open("/tmp/x") → fd=3`, 'ta');
+              r.local('a', 'fd', '3');
+            }
+          }
+        } else if (op === 'FSTAT') {
+          r.log(`  PRIV ▸ fstat(fd)  ·  inode-bound, immune to swaps`, 'ta');
+          r.local('a', 'kind', 'regular (verified by fd)');
+          r.local('a', 'safe', '✓ (fresh)');
+        } else if (op === 'WRITE') {
+          if (attackerHit) {
+            r.log(`  PRIV ▸ write(fd, "log line")  →  /etc/passwd OVERWRITTEN with attacker-influenced content`, 'bad');
+          } else {
+            r.log(`  PRIV ▸ write(fd, "log line")`, 'ta');
+          }
+        } else if (op === 'CLOSE') {
+          r.log(`  PRIV ▸ close(fd)`, 'ta');
+          r.local('a', 'fd', 'closed');
+        }
+        opIdxA++;
+      }
+
+      r.step();
+      r.log('');
+      if (attackerHit) {
+        r.log(`; attacker won the race · privileged write landed on /etc/passwd`, 'bad');
+        r.outcome(`✗ /etc/passwd HIJACKED · root escalation achieved`, 'bad');
+        r.resource('/etc/passwd ← attacker content', { bad: true, meta: 'mitigation: open by FD with O_NOFOLLOW' });
+      } else if (mit === 'fd') {
+        r.log(`; mitigation engaged · open() refused the symlink (O_NOFOLLOW)`, 'ok');
+        r.outcome(`✓ defense held · symlink refused at open()`, 'ok');
+        r.resource('/tmp/x → (regular)', { ok: true, meta: 'O_NOFOLLOW + fd-based ops' });
+      } else {
+        r.log(`; attacker too slow · race window not hit`, 'ok');
+        r.outcome(`✓ race window missed · no compromise`, 'ok');
+      }
+      return r.finish();
+    },
+  };
+
+  // ---------- MODE 3 : BANK DOUBLE-SPEND ----------
+  const M_BANK = {
+    label: 'bank double-spend',
+    controls: () => `
+      <h5>Bank <em>Double-spend</em></h5>
+      <div class="desc">Two parallel withdrawals from a shared balance. Without a single atomic UPDATE, both can pass the check.</div>
+      <div class="ctrl">
+        <label>// initial balance ($)</label>
+        <input id="b_bal" type="number" min="10" max="10000" value="100">
+      </div>
+      <div class="ctrl">
+        <label>// withdrawal amount ($)</label>
+        <input id="b_amt" type="number" min="1" max="10000" value="80">
+      </div>
+      <div class="ctrl">
+        <label>// synchronisation</label>
+        <div class="switch two" id="b_sync">
+          <button data-v="off" class="on">off (race)</button>
+          <button data-v="tx" class="safe">atomic UPDATE</button>
+        </div>
+      </div>
+    `,
+    setup: () => {
+      const bal = parseInt(($('#b_bal')||{}).value || 100, 10);
+      const amt = parseInt(($('#b_amt')||{}).value || 80, 10);
+      const sync = ($('#b_sync .on') || {}).dataset?.v || 'off';
+
+      let ops, codeLines, codeLang;
+      if (sync === 'tx') {
+        ops = [
+          { kind: 'UPDATE', detail: 'bal-=amt', line: 3 },
+          { kind: 'WHERE',  detail: 'bal≥amt',  line: 4 },
+          { kind: 'COMMIT', detail: '',          line: 7 },
+        ];
+        codeLang = 'py · atomic';
+        codeLines = [
+          '<span class="kw">def</span> <span class="fn">withdraw</span>(amount):',
+          '    <span class="com"># single atomic statement — DB engine serialises</span>',
+          '    rows = db.<span class="fn">execute</span>(<span class="str">"""</span>',
+          '        <span class="str">UPDATE acc SET bal = bal - ?</span>',
+          '        <span class="str">WHERE bal &gt;= ?</span>',
+          '    <span class="str">"""</span>, [amount, amount])',
+          '    <span class="kw">if</span> rows == <span class="num">1</span>: <span class="kw">return</span> SUCCESS',
+          '    <span class="kw">return</span> ERROR',
+        ];
+      } else {
+        ops = [
+          { kind: 'SELECT',  detail: 'balance',  line: 2 },
+          { kind: 'CHECK',   detail: '≥amt',     line: 3 },
+          { kind: 'COMPUTE', detail: 'bal-amt',  line: 5 },
+          { kind: 'UPDATE',  detail: 'balance',  line: 6 },
+        ];
+        codeLang = 'py · race';
+        codeLines = [
+          '<span class="kw">def</span> <span class="fn">withdraw</span>(amount):',
+          '    bal = db.<span class="fn">get</span>(<span class="str">"balance"</span>)        <span class="com"># SELECT</span>',
+          '    <span class="kw">if</span> bal &lt; amount:                <span class="com"># CHECK</span>',
+          '        <span class="kw">return</span> ERROR',
+          '    new_bal = bal - amount         <span class="com"># COMPUTE</span>',
+          '    db.<span class="fn">set</span>(<span class="str">"balance"</span>, new_bal)    <span class="com"># UPDATE</span>',
+          '    <span class="kw">return</span> SUCCESS',
+        ];
+      }
+
+      const codeA = { title: `Request 1  (−$${amt})`, lang: codeLang, lines: codeLines };
+      const codeB = { title: `Request 2  (−$${amt})`, lang: codeLang, lines: codeLines };
+
+      const initLocals = sync === 'tx'
+        ? [
+            { k: 'amount', v: `$${amt}` },
+            { k: 'rows',   v: '—'        },
+            { k: 'result', v: '—'        },
+          ]
+        : [
+            { k: 'amount',  v: `$${amt}` },
+            { k: 'bal',     v: '—'        },
+            { k: 'pass',    v: '—'        },
+            { k: 'new_bal', v: '—'        },
+          ];
+
+      const a = { id: 'a', name: 'REQ-1', sub: `−$${amt}`, ops: JSON.parse(JSON.stringify(ops)), locals: JSON.parse(JSON.stringify(initLocals)) };
+      const b = { id: 'b', name: 'REQ-2', sub: `−$${amt}`, ops: JSON.parse(JSON.stringify(ops)), locals: JSON.parse(JSON.stringify(initLocals)) };
+      buildRails([a, b], 'account balance', `$${bal}`, {
+        meta: `invariant: balance ≥ 0`,
+        outcome: 'awaiting run',
+        code: { a: codeA, b: codeB },
+      });
+    },
+    onMount: () => {
+      $$('#b_sync button').forEach(b => b.addEventListener('click', () => {
+        $$('#b_sync button').forEach(x => x.classList.remove('on','safe'));
+        b.classList.add('on');
+        if (b.dataset.v === 'tx') b.classList.add('safe');
+        Player.reset();
+      }));
+      $('#b_bal').addEventListener('input', () => Player.reset());
+      $('#b_amt').addEventListener('input', () => Player.reset());
+    },
+    compute: () => {
+      const initial = parseInt($('#b_bal').value, 10);
+      const amount  = parseInt($('#b_amt').value, 10);
+      const sync    = $('#b_sync .on').dataset.v;
+      const r = makeRecorder();
+      r.log(`> 2 parallel withdrawals of $${amount} from $${initial}  ·  sync=${sync}`, 'info');
+
+      let balance = initial;
+      const threads = [
+        { id:'a', side:'a', name:'REQ-1', pc:0, t:0, success:false },
+        { id:'b', side:'b', name:'REQ-2', pc:0, t:0, success:false },
+      ];
+      const phaseCount = sync === 'tx' ? 3 : 4;
+
+      // worst-case interleave: alternate strictly for 'off' so both read before either writes
+      let order = [];
+      if (sync === 'off') {
+        for (let i = 0; i < phaseCount; i++) { order.push('a'); order.push('b'); }
+      } else {
+        for (let i = 0; i < phaseCount; i++) order.push('a');
+        for (let i = 0; i < phaseCount; i++) order.push('b');
+      }
+
+      for (const tid of order) {
+        const t = threads.find(x => x.id === tid);
+        if (t.pc >= phaseCount) continue;
+        const phase = t.pc;
+        r.step();
+        r.activate(t.id, t.pc, t.side);
+        if (sync === 'tx') {
+          if (phase === 0) {
+            r.log(`  ${t.name} ▸ UPDATE balance = balance - ${amount}  WHERE balance ≥ ${amount}`, t.side === 'a' ? 'ta' : 'tb');
+          } else if (phase === 1) {
+            if (balance >= amount) {
+              balance -= amount;
+              t.success = true;
+              r.log(`  ${t.name} ▸ rows_affected = 1   balance = $${balance}`, 'ok');
+              r.local(t.id, 'rows',   '1');
+              r.local(t.id, 'result', 'SUCCESS');
+              r.resource(`$${balance}`, { meta: `invariant: balance ≥ 0` });
+            } else {
+              r.log(`  ${t.name} ▸ rows_affected = 0   refused`, 'ok');
+              r.local(t.id, 'rows',   '0');
+              r.local(t.id, 'result', 'ERROR');
+            }
+          } else {
+            r.log(`  ${t.name} ▸ COMMIT`, t.side === 'a' ? 'ta' : 'tb');
+          }
+        } else {
+          if (phase === 0) {
+            t.t = balance;
+            r.log(`  ${t.name} ▸ SELECT balance  → $${t.t}`, t.side === 'a' ? 'ta' : 'tb');
+            r.local(t.id, 'bal', `$${t.t}`);
+          } else if (phase === 1) {
+            const ok = t.t >= amount;
+            r.log(`  ${t.name} ▸ if balance ≥ ${amount}  → ${ok ? '✓' : '✗'}  (saw $${t.t})`, ok ? (t.side === 'a' ? 'ta' : 'tb') : 'dim');
+            r.local(t.id, 'pass', ok ? '✓' : '✗');
+            if (!ok) { t.pc = phaseCount; continue; }
+          } else if (phase === 2) {
+            t.t = t.t - amount;
+            r.log(`  ${t.name} ▸ COMPUTE  $${t.t + amount} - $${amount} = $${t.t}`, t.side === 'a' ? 'ta' : 'tb');
+            r.local(t.id, 'new_bal', `$${t.t}`);
+          } else if (phase === 3) {
+            balance = t.t;
+            t.success = true;
+            r.log(`  ${t.name} ▸ UPDATE balance = $${balance}`, 'res');
+            r.resource(`$${balance}`, { meta: `invariant: balance ≥ 0` });
+          }
+        }
+        t.pc++;
+      }
+
+      const expectedSuccesses = Math.floor(initial / amount);
+      const actualSuccesses = threads.filter(t => t.success).length;
+      r.step();
+      r.log('');
+      if (balance < 0 || actualSuccesses > expectedSuccesses) {
+        r.log(`; final balance = $${balance}  ·  invariant VIOLATED  ·  ${actualSuccesses} successes from $${initial}`, 'bad');
+        r.outcome(`✗ overdraft · balance = $${balance} (expected ≥ 0)`, 'bad');
+        r.resource(`$${balance}`, { bad: true, meta: `${actualSuccesses}× $${amount} from $${initial}` });
+      } else {
+        r.log(`; final balance = $${balance}  ·  invariant held  ·  ${actualSuccesses} success(es)`, 'ok');
+        r.outcome(`✓ invariant held · balance = $${balance}`, 'ok');
+        r.resource(`$${balance}`, { ok: true, meta: `${actualSuccesses} valid withdrawal(s)` });
+      }
+      return r.finish();
+    },
+  };
+
+  // ---------- MODE 4 : SYMLINK RACE ----------
+  const M_SYMLINK = {
+    label: 'symlink race',
+    controls: () => `
+      <h5>Symlink <em>Race</em></h5>
+      <div class="desc">A setuid program writes to /tmp/foo.tmp. Attacker symlinks the path to /etc/shadow between path resolution and open.</div>
+      <div class="ctrl">
+        <label>// target file</label>
+        <select id="s_target">
+          <option value="/etc/passwd">/etc/passwd</option>
+          <option value="/etc/shadow" selected>/etc/shadow</option>
+          <option value="/root/.ssh/authorized_keys">/root/.ssh/authorized_keys</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>// privileged delay (steps)</label>
+        <input id="s_delay" type="number" min="1" max="6" value="3">
+      </div>
+      <div class="ctrl">
+        <label>// mitigation</label>
+        <div class="switch two" id="s_mit">
+          <button data-v="off" class="on">predictable + open(path)</button>
+          <button data-v="safe" class="safe">mkstemp + O_NOFOLLOW + O_EXCL</button>
+        </div>
+      </div>
+    `,
+    setup: () => {
+      const delay  = parseInt(($('#s_delay')||{}).value || 3, 10);
+      const mit    = ($('#s_mit .on') || {}).dataset?.v || 'off';
+      const target = ($('#s_target') || {}).value || '/etc/shadow';
+
+      let privOps, codeAlines, codeAlang;
+      if (mit === 'safe') {
+        privOps = [
+          { kind: 'MKSTEMP', detail: 'tmpXXX',  line: 3 },
+          { kind: 'OPEN',    detail: 'NOFOLLOW',line: 3 },
+          { kind: 'WRITE',   detail: 'log',     line: 5 },
+          { kind: 'CLOSE',   detail: 'fd',      line: 6 },
+        ];
+        codeAlang = 'c · setuid (safe)';
+        codeAlines = [
+          '<span class="kw">int</span> <span class="fn">main</span>() {',
+          '    <span class="kw">char</span> tmpl[] = <span class="str">"/tmp/tmpXXXXXX"</span>;',
+          '    <span class="kw">int</span> fd = <span class="fn">mkstemp</span>(tmpl);          <span class="com">// atomic O_EXCL+O_CREAT, random name</span>',
+          '    <span class="com">// fd is now bound to a unique inode in /tmp.</span>',
+          '    <span class="fn">write</span>(fd, log_line, n);            <span class="com">// WRITE</span>',
+          '    <span class="fn">close</span>(fd);                          <span class="com">// CLOSE</span>',
+          '    <span class="kw">return</span> <span class="num">0</span>;',
+          '}',
+        ];
+      } else {
+        const waitOps = Array.from({length: delay}, (_, i) => ({ kind: '·', detail: `wait ${i+1}`, line: 3 }));
+        privOps = [
+          { kind: 'PATH',  detail: '/tmp/x.tmp', line: 2 },
+          ...waitOps,
+          { kind: 'OPEN',  detail: 'O_CREAT',    line: 4 },
+          { kind: 'WRITE', detail: 'log',        line: 5 },
+          { kind: 'CLOSE', detail: 'fd',         line: 6 },
+        ];
+        codeAlang = 'c · setuid (vulnerable)';
+        codeAlines = [
+          '<span class="kw">int</span> <span class="fn">main</span>() {',
+          '    <span class="kw">const char</span> *p = <span class="str">"/tmp/x.tmp"</span>;     <span class="com">// PATH (predictable!)</span>',
+          '    <span class="com">/* compute log line ... TOCTOU window */</span>',
+          '    <span class="kw">int</span> fd = <span class="fn">open</span>(p, O_CREAT|O_WRONLY,',
+          '                  <span class="num">0644</span>);             <span class="com">// OPEN — follows symlinks!</span>',
+          '    <span class="fn">write</span>(fd, log_line, n);             <span class="com">// WRITE</span>',
+          '    <span class="fn">close</span>(fd);                          <span class="com">// CLOSE</span>',
+          '    <span class="kw">return</span> <span class="num">0</span>;',
+          '}',
+        ];
+      }
+
+      const tName = target.split('/').pop();
+      const atkOps = [];
+      for (let i = 0; i < 3; i++) {
+        atkOps.push({ kind: 'UNLINK',  detail: '/tmp/x',     line: 2 });
+        atkOps.push({ kind: 'SYMLINK', detail: `→ ${tName}`, line: 3 });
+      }
+      const codeBlines = [
+        '<span class="com"># attacker — tight loop on a writable directory</span>',
+        '<span class="kw">while</span> <span class="kw">true</span>; <span class="kw">do</span>',
+        '    <span class="fn">rm</span> -f <span class="str">/tmp/x.tmp</span>',
+        '    <span class="fn">ln</span> -s <span class="str">' + target + '</span> <span class="str">/tmp/x.tmp</span>',
+        '<span class="kw">done</span>',
+      ];
+
+      const privLocals = mit === 'safe'
+        ? [
+            { k: 'tmpl', v: '/tmp/tmpXXXXXX' },
+            { k: 'fd',   v: '—'              },
+            { k: 'path', v: '—'              },
+          ]
+        : [
+            { k: 'path', v: '/tmp/x.tmp' },
+            { k: 'fd',   v: '—'           },
+            { k: 'state',v: '—'           },
+          ];
+      const atkLocals = [
+        { k: 'iter', v: '0' },
+        { k: 'last', v: '—' },
+      ];
+
+      const priv = { id: 'a', name: 'PRIV', sub: 'setuid root', ops: privOps, locals: privLocals };
+      const atk  = { id: 'b', name: 'ATTK', sub: 'unpriv user', ops: atkOps,  locals: atkLocals  };
+      buildRails([priv, atk], 'filesystem', `/tmp/x.tmp → (does not exist yet)`, {
+        meta: `target: ${target}`,
+        outcome: 'awaiting run',
+        code: {
+          a: { title: 'Privileged process', lang: codeAlang, lines: codeAlines },
+          b: { title: 'Attacker', lang: 'sh · loop', lines: codeBlines },
+        },
+      });
+    },
+    onMount: () => {
+      $$('#s_mit button').forEach(b => b.addEventListener('click', () => {
+        $$('#s_mit button').forEach(x => x.classList.remove('on','safe'));
+        b.classList.add('on');
+        if (b.dataset.v === 'safe') b.classList.add('safe');
+        Player.reset();
+      }));
+      $('#s_delay').addEventListener('input', () => Player.reset());
+      $('#s_target').addEventListener('change', () => Player.reset());
+    },
+    compute: () => {
+      const target = $('#s_target').value;
+      const delay  = parseInt($('#s_delay').value, 10);
+      const mit    = $('#s_mit .on').dataset.v;
+      const r = makeRecorder();
+      r.log(`> setuid program writes a temp file  ·  attacker target=${target}  ·  mitigation=${mit}`, 'info');
+
+      let path = '/tmp/x.tmp';
+      let isSymlink = false;
+      let attackerHit = false;
+      let opIdxA = 0, opIdxB = 0;
+
+      if (mit === 'safe') {
+        const random = 'tmp' + Math.random().toString(36).slice(2,8).toUpperCase();
+        path = '/tmp/' + random;
+
+        r.step();
+        r.activate('a', opIdxA++, 'a'); r.stat('a', 'mkstemp');
+        r.log(`  PRIV ▸ mkstemp("/tmp/tmpXXXXXX") → fd=3  ·  path=${path}`, 'ta');
+        r.local('a', 'path', path);
+        r.local('a', 'fd',   '3');
+        r.resource(`${path} → (regular, root-only)`, { meta: `target: ${target}` });
+
+        r.step();
+        r.activate('a', opIdxA++, 'a'); r.stat('a', 'open NOFOLLOW');
+        r.log(`  PRIV ▸ already opened by mkstemp; O_NOFOLLOW + O_EXCL active`, 'ta');
+
+        r.step();
+        r.activate('a', opIdxA++, 'a'); r.stat('a', 'write');
+        r.log(`  PRIV ▸ write(fd, "log line")`, 'ta');
+
+        r.step();
+        r.activate('a', opIdxA++, 'a'); r.stat('a', 'close');
+        r.log(`  PRIV ▸ close(fd)`, 'ta');
+        r.local('a', 'fd', 'closed');
+
+        r.step();
+        r.log('');
+        r.log(`; defense held · unpredictable name + fd-bound ops + O_NOFOLLOW`, 'ok');
+        r.outcome(`✓ defense held · attacker had no path to predict`, 'ok');
+        r.resource(`${path} written safely`, { ok: true, meta: `target: ${target}` });
+        return r.finish();
+      }
+
+      // vulnerable path
+      let atkIter = 0;
+      r.step();
+      r.activate('a', opIdxA++, 'a'); r.stat('a', 'path = /tmp/x.tmp');
+      r.log(`  PRIV ▸ path = "/tmp/x.tmp"  (predictable name)`, 'ta');
+      r.local('a', 'state', 'predictable');
+
+      for (let d = 0; d < delay; d++) {
+        r.step();
+        r.activate('a', opIdxA++, 'a'); r.stat('a', `delay ${d+1}/${delay}`);
+        r.log(`  PRIV ▸ ··· (window step ${d+1})`, 'dim');
+
+        if (opIdxB < 6) {
+          r.step();
+          r.activate('b', opIdxB++, 'b'); r.stat('b', 'unlink');
+          r.log(`  ATTK ▸ unlink("/tmp/x.tmp")`, 'tb');
+          atkIter++;
+          r.local('b', 'iter', atkIter);
+          r.local('b', 'last', 'unlink');
+          r.resource(`/tmp/x.tmp → (deleted)`, { meta: `target: ${target}` });
+        }
+        if (opIdxB < 6) {
+          r.step();
+          r.activate('b', opIdxB++, 'b'); r.stat('b', 'symlink');
+          r.log(`  ATTK ▸ symlink("${target}", "/tmp/x.tmp")`, 'tb');
+          isSymlink = true;
+          r.local('b', 'last', `→ ${target.split('/').pop()}`);
+          r.resource(`/tmp/x.tmp → SYMLINK → ${target}`, { meta: `target: ${target}` });
+        }
+      }
+
+      r.step();
+      r.activate('a', opIdxA++, 'a'); r.stat('a', 'open');
+      if (isSymlink) {
+        r.log(`  PRIV ▸ open("/tmp/x.tmp", O_CREAT|O_WRONLY) → fd=3 (kernel followed symlink to ${target})`, 'bad');
+        r.local('a', 'fd',    `3 → ${target.split('/').pop()}!`);
+        r.local('a', 'state', 'HIJACKED');
+        attackerHit = true;
+      } else {
+        r.log(`  PRIV ▸ open("/tmp/x.tmp", O_CREAT|O_WRONLY) → fd=3`, 'ta');
+        r.local('a', 'fd', '3');
+      }
+
+      r.step();
+      r.activate('a', opIdxA++, 'a'); r.stat('a', 'write');
+      if (attackerHit) {
+        r.log(`  PRIV ▸ write(fd, "log line")  →  ${target} CORRUPTED by privileged write`, 'bad');
+        r.resource(`${target} ← attacker content`, { bad: true, meta: `target: ${target}` });
+      } else {
+        r.log(`  PRIV ▸ write(fd, "log line")`, 'ta');
+      }
+
+      r.step();
+      r.activate('a', opIdxA++, 'a'); r.stat('a', 'close');
+      r.log(`  PRIV ▸ close(fd)`, 'ta');
+      r.local('a', 'fd', 'closed');
+
+      r.step();
+      r.log('');
+      if (attackerHit) {
+        r.log(`; attacker won the race · ${target} overwritten by setuid root`, 'bad');
+        r.outcome(`✗ ${target} hijacked · privilege escalation achieved`, 'bad');
+      } else {
+        r.log(`; race window missed · file written normally`, 'ok');
+        r.outcome(`✓ window missed · no compromise`, 'ok');
+      }
+      return r.finish();
+    },
+  };
+
+  // ============= MODE WIRING ============
+  const MODES = { counter: M_COUNTER, toctou: M_TOCTOU, bank: M_BANK, symlink: M_SYMLINK };
+
+  function mountMode(mode) {
+    Player.pause();
+    Player.trace = [];
+    Player.currentStep = -1;
+    currentMode = mode;
+    renderExplainer(mode);
+    ctrlRoot.innerHTML = MODES[mode].controls();
+    if (MODES[mode].onMount) MODES[mode].onMount();
+    if (MODES[mode].setup)   MODES[mode].setup();
+    clearTranscript();
+    tline(`[ field-study · ${MODES[mode].label} · ready ]`, 'info');
+    tline(`[ ▶ play  ·  ⏭ step forward  ·  ⏮ step back  ·  ⏹ reset ]`, 'dim');
+    tline('', '');
+    Player.updateUI();
+  }
+
+  tabsRoot.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    $$('#modeTabs button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    mountMode(b.dataset.mode);
+  });
+
+  // wire transport controls (once)
+  wireTransport();
+
+  // keyboard shortcuts: space = play/pause, ←/→ = step, R = reset
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea, select')) return;
+    if (e.key === ' ')             { e.preventDefault(); Player.toggle(); }
+    else if (e.key === 'ArrowRight'){ e.preventDefault(); Player.stepForwardOnce(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); Player.pause(); Player.prev(); }
+    else if (e.key === 'r' || e.key === 'R') { Player.reset(); }
+  });
+
+  // ============= HERO PARALLAX ============
+  const heroSys = document.getElementById('heroSystem');
+  let frame;
+  document.addEventListener('mousemove', e => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const w = window.innerWidth, h = window.innerHeight;
+      const x = (e.clientX / w - 0.5) * 12;
+      const y = (e.clientY / h - 0.5) * 6;
+      if (heroSys) heroSys.style.transform = `rotateX(${8 + y}deg) rotateY(${-12 + x}deg)`;
+    });
+  });
+
+  // ============= INITIAL ============
+  mountMode('counter');
+
+})();
+</script>
+
+</body>
+</html>

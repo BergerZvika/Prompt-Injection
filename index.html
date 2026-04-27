@@ -243,6 +243,72 @@ main { position: relative; z-index: 1; }
   margin-top: 12px;
 }
 
+/* Race conditions preview — brutalist concurrency aesthetic */
+.lab.race .preview {
+  background:
+    radial-gradient(circle at 25% 50%, rgba(255, 36, 36, 0.18), transparent 55%),
+    radial-gradient(circle at 75% 50%, rgba(255, 230, 0, 0.14), transparent 55%),
+    var(--bg-2);
+}
+.lab.race .preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(255,255,255,0.022) 10px 11px);
+}
+.lab.race .preview-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1;
+  padding: 0 28px;
+}
+.lab.race .preview-text .rail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  font-weight: 500;
+  align-self: stretch;
+}
+.lab.race .preview-text .rail.a {
+  color: #ff7474;
+  border: 1px solid #ff2424;
+  background: rgba(255,36,36,0.08);
+  margin-right: 38px;
+}
+.lab.race .preview-text .rail.b {
+  color: #fff15c;
+  border: 1px solid #ffe600;
+  background: rgba(255,230,0,0.08);
+  margin-left: 38px;
+}
+.lab.race .preview-text .counter {
+  font-family: 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  color: #f0eada;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  text-shadow: 3px 3px 0 #ff2424, 6px 6px 0 #ffe600;
+}
+.lab.race .preview-text .counter em {
+  font-style: normal;
+  color: #ff00aa;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  font-size: 0.62em;
+  margin-left: 8px;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+}
+
 /* Prompt injection preview — cyber aesthetic */
 .lab.prompt .preview {
   background:
@@ -322,6 +388,11 @@ main { position: relative; z-index: 1; }
   color: var(--accent);
   border: 1px solid rgba(0, 212, 255, 0.3);
 }
+.lab.race .badge {
+  background: rgba(255, 36, 36, 0.10);
+  color: #ff7474;
+  border: 1px solid rgba(255, 36, 36, 0.35);
+}
 
 .lab h2 {
   font-family: 'Inter', sans-serif;
@@ -372,6 +443,10 @@ main { position: relative; z-index: 1; }
 .lab.prompt .cta {
   background: var(--accent);
   color: var(--bg);
+}
+.lab.race .cta {
+  background: #ff2424;
+  color: #f0eada;
 }
 .lab:hover .cta { transform: translateX(4px); }
 .lab .cta::after { content: '→'; font-family: serif; font-size: 16px; }
@@ -463,7 +538,7 @@ footer span { color: var(--text-dim); }
     <span class="small">— a Cyber lab</span>
   </h1>
   <p class="lede">
-    Two self-contained, in-browser labs that take you from <em>vulnerability</em> to <em>defense</em> through worked examples, real CVEs, and code you can run. Pick a lab.
+    Three self-contained, in-browser labs that take you from <em>vulnerability</em> to <em>defense</em> through worked examples, real CVEs, and code you can run. Pick a lab.
   </p>
 </section>
 
@@ -508,6 +583,29 @@ footer span { color: var(--text-dim); }
         <dt>covers</dt><dd>Direct &middot; Indirect &middot; Jailbreaks &middot; Defenses</dd>
         <dt>extras</dt><dd>Hidden-content demos, real CVEs, mitigation patterns</dd>
         <dt>format</dt><dd>Single-page reference</dd>
+      </dl>
+      <span class="cta">Enter the lab</span>
+    </div>
+  </a>
+
+  <a class="lab race" href="race-conditions.html">
+    <div class="preview">
+      <div class="preview-text">
+        <span class="rail a">▸ A: READ &middot; +1 &middot; WRITE</span>
+        <span class="counter">1827<em>≠ 2000</em></span>
+        <span class="rail b">▸ B: READ &middot; +1 &middot; WRITE</span>
+      </div>
+    </div>
+    <div class="body">
+      <span class="badge">LAB 03 &middot; CONCURRENCY</span>
+      <h2>Race Conditions</h2>
+      <p class="sub">
+        Two threads, one resource, no agreement on order. Lost-update counters, TOCTOU file races, double-spend transactions, and symlink races — each with a step-through interleaving simulator showing live source, locals, and the gap an attacker exploits.
+      </p>
+      <dl class="meta">
+        <dt>scenarios</dt><dd>Lost update &middot; TOCTOU &middot; Bank double-spend &middot; Symlink race</dd>
+        <dt>simulator</dt><dd>Step-by-step playback &middot; live locals &middot; code-line highlight</dd>
+        <dt>format</dt><dd>Single-page brutalist manifesto</dd>
       </dl>
       <span class="cta">Enter the lab</span>
     </div>

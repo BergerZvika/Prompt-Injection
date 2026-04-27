@@ -10,6 +10,7 @@ An interactive collection of single-page security labs. Each lab is a self-conta
 |---|-----|----------------|------|
 | 01 | **Integer Overflow** | bit storage, signed vs unsigned, wraparound, safe vs unsafe operators, real-world incidents, live C programs you can run, paired secure fixes | [`integer-overflow.html`](integer-overflow.html) |
 | 02 | **Prompt Injection** | direct and indirect prompt-injection attacks against LLM apps, with worked examples and layered defenses | [`prompt-injection.html`](prompt-injection.html) |
+| 03 | **Race Conditions** | concurrency bugs that turn into vulnerabilities — lost-update counters, TOCTOU file races, double-spend transactions, symlink races — with a step-through interleaving simulator | [`race-conditions.html`](race-conditions.html) |
 
 The hub page at [`index.html`](index.html) lets you pick between labs.
 
@@ -75,6 +76,45 @@ There are two categories:
 | **Input Contextualization** | Clearly label untrusted content as data, not instructions |
 | **Human-in-the-Loop** | Require human approval before the model takes high-impact actions |
 | **Monitoring & Logging** | Log inputs and outputs to detect and investigate attacks |
+
+---
+
+## Lab 03 — Race Conditions
+
+A single-page interactive lab covering concurrency bugs that become security vulnerabilities — what happens when two flows of execution touch shared state without synchronisation, and how attackers turn that gap into exploitation primitives.
+
+A race condition exists when (1) shared mutable state is accessed by (2) concurrent flows, doing (3) a non-atomic operation, with (4) no synchronisation. Remove any one of those four ingredients and the bug is impossible. Forget any one of them and the bug is inevitable.
+
+### Scenarios
+
+The lab includes four scripted interleaving scenarios, each rendered as a step-by-step playback with live thread state:
+
+1. **Lost-update counter** — two threads each running `counter++` without a lock; toggle `off` / `mutex` / `atomic` and watch the same workload produce wrong / right / right results
+2. **TOCTOU file race** — privileged process does `stat → check → open` on a path; attacker swaps the path for a symlink to `/etc/passwd` between the steps; toggle path-based vs fd-based mitigation
+3. **Bank double-spend** — two parallel withdrawals against a shared balance; both pass the check before either writes; toggle `SELECT/UPDATE` vs atomic `UPDATE … WHERE bal ≥ amount`
+4. **Symlink race** — setuid binary creates a temp file at a predictable path; attacker `unlink`/`symlink` loop hijacks the path between path-decision and `open`; toggle `mkstemp + O_NOFOLLOW + O_EXCL` mitigation
+
+### Simulator features
+
+- **Source-code panes per thread** — the actual C / Python / shell each thread runs, with the current line highlighted as it executes
+- **Op rails per thread** — abstracted operation cards (READ / +1 / WRITE / OPEN / SYMLINK / …) lighting up as the scheduler picks them
+- **Locals pane per thread** — register-style display of each thread's local variables with a flash animation when they change
+- **Shared resource panel** — the contested state (counter / balance / filesystem path) updating live
+- **Transcript** — a narrated log of every step
+- **Transport controls** — ⏹ Reset · ⏮ Step Back · ▶/⏸ Play/Pause · ⏭ Step Forward · step counter · speed slider · keyboard shortcuts (Space, ←, →, R)
+- **Outcome banner** — invariant held vs invariant violated, with the specific violation
+- **Study notes panel** — for each scenario, the full "concept · how the attacker exploits it · your knobs · what to watch" reference, displayed below the running visualisation
+
+### Defenses covered
+
+| Defense | Description |
+|---------|-------------|
+| **Mutex / lock** | Serialise the critical section; only one thread enters at a time |
+| **Atomic operations** | Single-instruction read-modify-write primitives (`__atomic_fetch_add`) |
+| **Compare-and-swap** | Lock-free retry pattern: read, compute, swap-or-retry |
+| **File descriptors** | Open once and operate on the FD (`fstat`, `fchmod`, `fchown`); add `O_NOFOLLOW` |
+| **DB transactions** | Atomic check-and-mutate via `UPDATE … WHERE …` or serializable isolation |
+| **Design** | Avoid sharing — immutable data, message-passing actors, single-writer patterns |
 
 ---
 
