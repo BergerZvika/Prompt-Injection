@@ -107,6 +107,9 @@
     text-transform: uppercase;
     color: var(--bone-dim);
   }
+  nav.top .brand-area {
+    display: flex; align-items: center; gap: 18px;
+  }
   nav.top .brand {
     display: flex; align-items: center; gap: 14px;
     color: var(--bone);
@@ -123,6 +126,38 @@
     position: absolute;
     inset: 4px;
     background: var(--thread-b);
+  }
+  nav.top .back-to-hub {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border: 1.5px solid var(--bone);
+    background: transparent;
+    color: var(--bone) !important;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  nav.top .back-to-hub::before {
+    content: '←';
+    font-size: 14px;
+    line-height: 1;
+  }
+  nav.top .back-to-hub:hover {
+    background: var(--bone);
+    color: var(--void) !important;
+    box-shadow: 4px 4px 0 var(--thread-a);
+    transform: translate(-2px, -2px);
+  }
+  nav.top .back-to-hub:active {
+    transform: translate(0, 0);
+    box-shadow: 1px 1px 0 var(--thread-a);
   }
   nav.top .links { display: flex; gap: 28px; }
   nav.top a { color: var(--bone-dim); text-decoration: none; transition: color .15s; }
@@ -1605,7 +1640,10 @@
 <!-- =========== NAV =========== -->
 <nav class="top">
   <div class="row">
-    <div class="brand"><span class="mark"></span> RACE-CONDITIONS · MANIFESTO LAB · v1.0</div>
+    <div class="brand-area">
+      <a class="back-to-hub" href="index.html">Cyber-Lab</a>
+      <div class="brand"><span class="mark"></span> RACE-CONDITIONS · MANIFESTO LAB · v1.0</div>
+    </div>
     <div class="links">
       <a href="#anatomy">Anatomy</a>
       <a href="#lessons">Plates</a>
